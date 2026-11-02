@@ -27,6 +27,13 @@ except ImportError as e:  # meestal: Windows (Smart App Control) blokkeert een o
 
 from .config import pad  # noqa: E402
 
+try:  # geen Engelstalige waarschuwingen (bv. over HF_TOKEN) tijdens de eenmalige download
+    from huggingface_hub.utils import logging as _hf_logging
+
+    _hf_logging.set_verbosity_error()
+except Exception:  # noqa: BLE001
+    pass
+
 log = logging.getLogger(__name__)
 
 # Whisper gebruikt maximaal de helft van zijn context (448) voor de prompt.
