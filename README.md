@@ -241,6 +241,8 @@ microfoon ─► stukken per pauze (Silero VAD) ─► Whisper (GPU/CPU) ─► 
 | *"Windows (Smart App Control) blokkeert een onderdeel"* of `DLL load failed ... Application Control policy` | Dubbelklik opnieuw `installeer.bat`: dat kiest automatisch een versie die Windows vertrouwt. Lukt het niet, probeer het enkele dagen later opnieuw (Windows leert nieuwe versies kennen). |
 | *"Windows heeft uw pc beschermd"* bij een `.bat` | Meer info → Toch uitvoeren (gebeurt bij bestanden uit een ZIP van het internet). |
 | Installatie faalt op `onnxruntime` of een ander pakket | Gebruik Python 3.13 (3.15 is nog te nieuw voor sommige pakketten). |
+| "De map is te diep" / `WinError 206` | Windows kent een limiet van 260 tekens per pad. Verplaats de map naar bv. `C:\lokaal-dicteren`. |
+| "ARM-versie van Python" (Snapdragon-laptop) | De spraakmotor bestaat niet voor ARM: installeer de **64-bit (x64)** Python, die werkt ook op ARM-laptops. |
 | "De microfoon gaf enkel stilte" | Instellingen → Privacy en beveiliging → Microfoon → *Bureaublad-apps toegang geven* aan; controleer de standaardmicrofoon. |
 | Sneltoets doet niets | Draait er nog een tweede dicteervenster? Of gebruikt een ander programma dezelfde sneltoets? Kies een andere in `config.yaml`. |
 | Er wordt oude klembordtekst geplakt | Verhoog `dicteren.plak_wacht_ms` (bv. 1500). |

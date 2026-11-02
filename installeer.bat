@@ -25,10 +25,22 @@ if not defined PY (
 )
 echo Python: %PY%
 
-if not exist ".venv\Scripts\python.exe" (
+rem Vooraf controleren: ARM-Python, te diepe map (260-tekenlimiet), Python-versie.
+%PY% -m app.installatiecheck
+if errorlevel 1 (
+  pause
+  exit /b 1
+)
+
+rem Op pip.exe controleren: zo wordt ook een half aangemaakte omgeving hersteld.
+if not exist ".venv\Scripts\pip.exe" (
   echo Python-omgeving aanmaken...
   %PY% -m venv .venv
-  if errorlevel 1 ( pause & exit /b 1 )
+  if errorlevel 1 (
+    rmdir /s /q .venv 2>nul
+    pause
+    exit /b 1
+  )
 )
 
 echo Pakketten installeren ^(dit kan enkele minuten duren^)...
