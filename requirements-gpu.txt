@@ -1,0 +1,5 @@
+# Optioneel: NVIDIA-GPU (CUDA 12) zonder aparte CUDA-installatie (~1 GB).
+# Zonder deze pakketten (of zonder NVIDIA-kaart) draait alles gewoon op de CPU.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+nvidia-cuda-runtime-cu12

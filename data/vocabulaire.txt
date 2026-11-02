@@ -1,0 +1,6 @@
+# Woorden en namen die Whisper juist moet schrijven.
+# Eén term per lijn (of komma-gescheiden). Lijnen met # worden genegeerd.
+# Belangrijkste termen bovenaan: de lijst wordt ingekort tot de limiet van Whisper.
+# Vervang deze voorbeelden door je eigen namen, merken en vaktermen.
+Peppol, btw, factuur, offerte
+OneDrive, Outlook, Teams

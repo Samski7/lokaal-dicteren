@@ -1,0 +1,3 @@
+* text=auto
+# Batchbestanden moeten Windows-regeleinden hebben, ook in een gedownloade ZIP.
+*.bat text eol=crlf

@@ -1,0 +1,17 @@
+faster-whisper>=1.1.0
+PyYAML>=6.0
+# Audio lezen we zelf in (app/asr.py), dus geen vaste PyAV-versie nodig.
+av>=14
+numpy
+# Web-UI (M2)
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+cryptography>=42
+# Andere spraakmodellen (NVIDIA Parakeet/Canary) en evaluatie (M4)
+onnx-asr[cpu,hub]>=0.7
+jiwer>=3.0
+# NVIDIA-GPU: zie requirements-gpu.txt (optioneel)
+# Dicteren op de laptop: microfoon + sneltoets + typen bij de cursor
+sounddevice>=0.4
+pynput>=1.7

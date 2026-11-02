@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Gedownloade modellen (groot, worden automatisch opgehaald)
+models/
+
+# Self-signed certificaat + PRIVÉSLEUTEL van de web-UI
+certs/
+# Tijdelijke audio uit de web-UI
+uploads/
+# Transcripten en evaluatieresultaten
+uitvoer/
+
+# Testaudio wordt opgehaald met tests/haal_testdata.py (FLEURS, CC BY 4.0)
+tests/data/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store

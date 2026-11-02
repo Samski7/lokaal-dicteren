@@ -1,0 +1,47 @@
+# Spraak-naar-tekst: configuratie
+# Relatieve paden zijn t.o.v. de projectmap.
+
+whisper:
+  model: large-v3-turbo        # standaardmodel
+  fallback_model: medium       # gebruikt als het standaardmodel niet laadt
+  compute_type: auto           # auto = int8 (snelst op GPU én CPU van deze laptop); of float16 / int8_float16
+  device: auto                 # auto = NVIDIA-GPU als die er is, anders CPU; of: cuda / cpu
+  taal: nl                     # null = automatisch detecteren
+  beam_size: 5
+  vad_filter: true             # stiltes overslaan (minder hallucinaties)
+  cpu_threads: 0               # 0 = automatisch
+  model_map: models            # hier worden de Whisper-modellen gedownload
+  # Komt vóór de vaktermen uit vocabulaire.txt; zorgt voor hoofdletters en leestekens.
+  prompt_inleiding: "Hallo, dit is een notitie. Vaktermen:"
+
+paden:
+  vocabulaire: data/vocabulaire.txt
+  uitvoer: uitvoer
+  uploads: uploads             # tijdelijke opslag van audio uit de web-UI
+
+opschonen:                     # opvulwoorden weg + nette zinnen (bij dicteren)
+  aan: true                    # opvulwoorden (euh, ehm, ...) wegfilteren met regels: direct
+  llm: true                    # zinnen opschonen met een lokaal taalmodel (+/- 3,5 s per stuk); false = sneller
+  ollama_model: gemma4:e2b-it-qat   # e2b: 2x sneller dan e4b, zelfde kwaliteit (gemeten)
+  ollama_url: http://localhost:11434
+  prompt: prompts/opschonen.md
+  timeout_seconden: 30
+
+dicteren:                      # dicteer.bat: inspreken op deze pc, tekst bij je cursor
+  sneltoets: "<ctrl>+<shift>+<space>"   # 1x = start, nog 1x = stop (Ctrl+Alt+Spatie = Claude)
+  microfoon: null              # null = standaardmicrofoon; nummer via: python -m app.dicteer --microfoons
+  spatie_erna: true            # spatie na de tekst, zodat je meteen verder kunt dicteren
+  invoegen: plakken            # plakken = via klembord + Ctrl+V (betrouwbaar); typen = letter per letter
+  model: null                  # eigen spraakmodel voor dicteren; null = whisper.model hierboven
+  live: true                   # tekst al plakken bij elke pauze terwijl je verder spreekt
+  pauze_ms: 700                # zo lang stil = einde van een stuk
+  max_stuk_seconden: 25        # zonder pauze toch knippen na zoveel seconden
+  max_seconden: 300            # opname stopt vanzelf na 5 minuten
+
+web:
+  host: 0.0.0.0                # 0.0.0.0 = bereikbaar in je lokale netwerk; 127.0.0.1 = enkel deze pc
+  poort: 8443
+
+# Privacy: false = audio uit de web-UI wordt meteen na transcriptie verwijderd.
+# De CLI raakt jouw eigen bestanden nooit aan.
+audio_bewaren: false

@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spraak naar tekst</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --kaart: #ffffff; --tekst: #1d1d1b; --zacht: #6b6a66;
+    --rand: #e2e0da; --accent: #2457c5; --accent-tekst: #fff; --rood: #c62828;
+    --waarschuwing: #fff4d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161615; --kaart: #212120; --tekst: #ecebe7; --zacht: #a3a19b;
+      --rand: #3a3936; --accent: #7fa6ff; --accent-tekst: #10131a; --rood: #ff6b6b;
+      --waarschuwing: #3a3220;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--tekst);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 1.35rem; margin: 8px 0; }
+  #status { font-size: .85rem; color: var(--zacht); }
+  .kaart {
+    background: var(--kaart); border: 1px solid var(--rand); border-radius: 12px;
+    padding: 16px; margin-top: 16px;
+  }
+  .invoer { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) { .invoer { grid-template-columns: 1fr; } }
+  button, .knop {
+    font: inherit; border-radius: 10px; border: 1px solid var(--rand); background: var(--kaart);
+    color: var(--tekst); padding: 10px 14px; cursor: pointer; text-align: center;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .groot { min-height: 72px; font-size: 1.05rem; font-weight: 600; }
+  #opneem { background: var(--accent); color: var(--accent-tekst); border-color: var(--accent); }
+  #opneem.bezig { background: var(--rood); border-color: var(--rood); color: #fff; }
+  .stip { width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+  #opneem.bezig .stip { animation: knipper 1s infinite; }
+  @keyframes knipper { 50% { opacity: .2; } }
+  input[type=file] { display: none; }
+  .melding { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--waarschuwing); font-size: .9rem; }
+  .fout { color: var(--rood); }
+  #voortgang { display: none; margin-top: 12px; color: var(--zacht); }
+  #resultaat { display: none; }
+  .meta { font-size: .85rem; color: var(--zacht); margin: 0 0 8px; }
+  textarea {
+    width: 100%; min-height: 180px; font: inherit; color: var(--tekst); background: var(--bg);
+    border: 1px solid var(--rand); border-radius: 8px; padding: 10px; resize: vertical;
+  }
+  .acties { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .acties button { flex: 1 1 auto; }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; color: var(--zacht); }
+  ol { list-style: none; padding: 0; margin: 8px 0 0; }
+  li { display: grid; grid-template-columns: 4.5em 1fr; gap: 8px; padding: 4px 0; border-top: 1px solid var(--rand); }
+  li time { font-variant-numeric: tabular-nums; color: var(--zacht); font-size: .85rem; padding-top: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Spraak naar tekst</h1>
+    <span id="status">Verbinden…</span>
+  </header>
+
+  <section class="kaart">
+    <div class="invoer">
+      <button id="opneem" class="groot" disabled><span class="stip"></span><span id="opneem-label">Opnemen</span></button>
+      <label class="knop groot" for="bestand">Bestand kiezen</label>
+      <input id="bestand" type="file" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.webm">
+    </div>
+    <div id="mic-melding" class="melding" hidden></div>
+    <div id="voortgang">Bezig met omzetten… <span id="teller">0</span> s</div>
+    <div id="fout" class="melding fout" hidden></div>
+  </section>
+
+  <section id="resultaat" class="kaart">
+    <p id="meta" class="meta"></p>
+    <textarea id="tekst" spellcheck="true" aria-label="Transcript"></textarea>
+    <div class="acties">
+      <button id="kopieer">Kopiëren</button>
+      <button data-download="txt">.txt</button>
+      <button data-download="srt">.srt</button>
+      <button data-download="json">.json</button>
+    </div>
+    <details>
+      <summary>Segmenten met tijdsstempels</summary>
+      <ol id="segmenten"></ol>
+    </details>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let resultaat = null, recorder = null, stukken = [], opnameStart = 0, opnameTimer = null;
+
+function tijd(sec, srt = false) {
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  if (srt) {
+    const ms = Math.round((s % 1) * 1000);
+    return [h, m, Math.floor(s)].map(n => String(n).padStart(2, "0")).join(":") + "," + String(ms).padStart(3, "0");
+  }
+  return `${String(m + h * 60).padStart(2, "0")}:${String(Math.floor(s)).padStart(2, "0")}`;
+}
+
+async function laadStatus() {
+  try {
+    const s = await (await fetch("/api/status")).json();
+    if (!s.klaar) { $("status").textContent = "Model laden…"; return setTimeout(laadStatus, 1500); }
+    $("status").textContent = `${s.model} · ${s.taal || "auto"}`;
+    if (micMogelijk()) $("opneem").disabled = false;
+  } catch { $("status").textContent = "Server niet bereikbaar"; setTimeout(laadStatus, 3000); }
+}
+
+function micMogelijk() {
+  if (window.isSecureContext && navigator.mediaDevices && window.MediaRecorder) return true;
+  const m = $("mic-melding");
+  m.hidden = false;
+  m.textContent = "Opnemen kan hier niet: de browser staat de microfoon enkel toe via https. " +
+    "Gebruik het https-adres, of kies een opname uit je dictafoon-app via ‘Bestand kiezen’.";
+  return false;
+}
+
+function kiesFormaat() {
+  const opties = [["audio/webm;codecs=opus", "webm"], ["audio/mp4", "m4a"], ["audio/ogg;codecs=opus", "ogg"]];
+  return opties.find(([t]) => MediaRecorder.isTypeSupported(t)) || ["", "webm"];
+}
+
+$("opneem").addEventListener("click", async () => {
+  if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  } catch (e) { return toonFout("Geen toegang tot de microfoon: " + e.message); }
+  const [mime, ext] = kiesFormaat();
+  recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  stukken = [];
+  recorder.ondataavailable = (e) => e.data.size && stukken.push(e.data);
+  recorder.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    clearInterval(opnameTimer);
+    $("opneem").classList.remove("bezig");
+    $("opneem-label").textContent = "Opnemen";
+    const blob = new Blob(stukken, { type: recorder.mimeType || mime });
+    verstuur(blob, `opname.${ext}`);
+  };
+  recorder.start(1000);
+  opnameStart = Date.now();
+  $("opneem").classList.add("bezig");
+  $("opneem-label").textContent = "Stop · 00:00";
+  opnameTimer = setInterval(() => {
+    $("opneem-label").textContent = "Stop · " + tijd((Date.now() - opnameStart) / 1000);
+  }, 250);
+});
+
+$("bestand").addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) verstuur(f, f.name);
+  e.target.value = "";
+});
+
+async function verstuur(blob, naam) {
+  $("fout").hidden = true;
+  $("opneem").disabled = true;
+  $("voortgang").style.display = "block";
+  const start = Date.now();
+  const teller = setInterval(() => $("teller").textContent = Math.round((Date.now() - start) / 1000), 500);
+  try {
+    const fd = new FormData();
+    fd.append("audio", blob, naam);
+    const r = await fetch("/api/transcribeer", { method: "POST", body: fd });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `Fout ${r.status}`);
+    toonResultaat(data);
+  } catch (e) {
+    toonFout(e.message);
+  } finally {
+    clearInterval(teller);
+    $("voortgang").style.display = "none";
+    $("opneem").disabled = !micMogelijk();
+  }
+}
+
+function toonFout(tekst) { $("fout").textContent = tekst; $("fout").hidden = false; }
+
+function toonResultaat(d) {
+  resultaat = d;
+  $("resultaat").style.display = "block";
+  $("tekst").value = d.tekst;
+  $("tekst").placeholder = d.tekst ? "" : "Geen spraak herkend. Spreek dichter bij de microfoon of probeer opnieuw.";
+  $("meta").textContent = `${d.bron} · ${d.duur_audio.toFixed(0)} s audio in ${d.duur_verwerking.toFixed(0)} s · ` +
+    `${d.model} · taal ${d.taal}` + (d.audio_bewaard ? "" : " · audio verwijderd");
+  const ol = $("segmenten");
+  ol.replaceChildren(...d.segmenten.map(s => {
+    const li = document.createElement("li");
+    const t = document.createElement("time");
+    t.textContent = tijd(s.start);
+    const p = document.createElement("span");
+    p.textContent = s.tekst;
+    li.append(t, p);
+    return li;
+  }));
+  $("resultaat").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+$("kopieer").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("tekst").value);
+    $("kopieer").textContent = "Gekopieerd ✓";
+  } catch {
+    $("tekst").select(); document.execCommand("copy");
+    $("kopieer").textContent = "Gekopieerd ✓";
+  }
+  setTimeout(() => $("kopieer").textContent = "Kopiëren", 1500);
+});
+
+document.querySelectorAll("[data-download]").forEach(b => b.addEventListener("click", () => {
+  if (!resultaat) return;
+  const soort = b.dataset.download;
+  const basis = (resultaat.bron || "transcript").replace(/\.[^.]+$/, "");
+  let inhoud, type = "text/plain";
+  if (soort === "txt") inhoud = $("tekst").value + "\n";
+  else if (soort === "srt") inhoud = resultaat.segmenten.map((s, i) =>
+    `${i + 1}\n${tijd(s.start, true)} --> ${tijd(s.einde, true)}\n${s.tekst}\n`).join("\n");
+  else { inhoud = JSON.stringify({ ...resultaat, tekst_bewerkt: $("tekst").value }, null, 2); type = "application/json"; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([inhoud], { type: type + ";charset=utf-8" }));
+  a.download = `${basis}.${soort}`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}));
+
+laadStatus();
+</script>
+</body>
+</html>
