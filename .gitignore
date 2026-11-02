@@ -6,6 +6,9 @@ __pycache__/
 # Gedownloade modellen (groot, worden automatisch opgehaald)
 models/
 
+# Eigen instellingen (overschrijven config.yaml; blijven bewaard bij updates)
+config.lokaal.yaml
+
 # Self-signed certificaat + PRIVÉSLEUTEL van de web-UI
 certs/
 # Tijdelijke audio uit de web-UI

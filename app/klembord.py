@@ -29,8 +29,9 @@ kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
 kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
 
 
-def _open(pogingen: int = 20) -> None:
-    # Een ander programma kan het klembord even vasthouden: kort opnieuw proberen.
+def _open(pogingen: int = 80) -> None:
+    # Een ander programma (klembordbeheerder, Extern bureaublad, ...) kan het klembord even
+    # vasthouden: tot ~2 s opnieuw proberen.
     for _ in range(pogingen):
         if user32.OpenClipboard(None):
             return

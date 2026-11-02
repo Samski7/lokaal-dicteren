@@ -19,7 +19,11 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 
-import jiwer
+try:
+    import jiwer
+except ImportError:
+    sys.exit("eval.py heeft extra pakketten nodig: "
+             r".\.venv\Scripts\python.exe -m pip install -r requirements-extra.txt")
 
 from app.asr import lees_audio, maak_transcriber
 from app.config import laad_config, pad

@@ -18,6 +18,8 @@ log = logging.getLogger(__name__)
 @cache
 def registreer_cuda() -> list[str]:
     """Maakt de CUDA-DLL's uit site-packages/nvidia/*/bin vindbaar. Geeft de mappen terug."""
+    if sys.platform != "win32":
+        return []  # Linux vindt de pip-CUDA-bibliotheken zelf; os.add_dll_directory is Windows-only
     mappen = []
     for sp in map(Path, sys.path):
         nvidia = sp / "nvidia"
@@ -41,6 +43,30 @@ def cuda_beschikbaar() -> bool:
     except Exception as e:  # noqa: BLE001
         log.info("Geen CUDA: %s", e)
         return False
+
+
+# Voorkeur per apparaat, snelste eerst. int8 ook op de GPU: op een GTX 1650 Ti is float16
+# ~3,5x trager dan int8 (gemeten). Oudere NVIDIA-kaarten (vóór Pascal) kennen geen int8.
+VOORKEUR = {
+    "cuda": ["int8", "int8_float16", "float16", "float32"],
+    "cpu": ["int8", "int8_float32", "float32"],
+}
+
+
+def kies_compute_type(device: str, gewenst: str | None = "auto") -> str:
+    """'auto' -> de snelste rekenprecisie die dit apparaat echt ondersteunt."""
+    if gewenst and gewenst != "auto":
+        return gewenst
+    try:
+        import ctranslate2
+
+        ondersteund = set(ctranslate2.get_supported_compute_types(device))
+    except Exception:  # noqa: BLE001
+        ondersteund = set()
+    for ct in VOORKEUR.get(device, ["float32"]):
+        if ct in ondersteund:
+            return ct
+    return "float32"
 
 
 def kies_device(gewenst: str | None) -> str:

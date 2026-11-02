@@ -19,12 +19,29 @@ log = logging.getLogger(__name__)
 OPVULWOORDEN = r"euh+|eh+m*|uh+m*|um+|hm+|ehm+|uhm+|mmm+"
 _OPVUL = re.compile(rf"(?<!\w)(?:{OPVULWOORDEN})(?!\w)[,.]?\s*", re.IGNORECASE)
 
+# Zinnen die Whisper bij ruis of stilte "verzint" (aangeleerd uit ondertitels van video's).
+# Enkel weggelaten als ze het hele stuk vormen, zodat echte gedicteerde tekst blijft staan.
+_ZINNEN = [
+    r"[^.!?]*amara\.org[^.!?]*",
+    r"ondertitel\w* (?:door|ingediend door|gemaakt door)\b[^.!?]*",
+    r"[^.!?]*tv gelderland[^.!?]*",
+    r"(?:bedankt|dank (?:u|je) wel) voor het (?:kijken|luisteren)",
+    r"abonneer (?:je|u) op (?:het|ons|mijn) kanaal[^.!?]*",
+]
+_HALLUCINATIE = re.compile(rf"^(?:\W*(?:{'|'.join(_ZINNEN)})[.!?]*)+\W*$", re.IGNORECASE)
+
+
+def is_hallucinatie(tekst: str) -> bool:
+    return bool(tekst.strip()) and bool(_HALLUCINATIE.match(tekst.strip()))
+
 
 def regels(tekst: str) -> str:
     """Snelle, voorspelbare opkuis zonder taalmodel.
 
     Herhaalde woorden laten we staan: in het Nederlands is "dat dat" vaak gewoon correct.
     """
+    if is_hallucinatie(tekst):
+        return ""
     t = _OPVUL.sub("", tekst)
     t = re.sub(r"\s+([,.!?])", r"\1", t)
     t = re.sub(r"\s{2,}", " ", t).strip()
@@ -45,7 +62,7 @@ class Opschoner:
         self.model = o.get("ollama_model", "gemma4:e2b-it-qat")
         self.url = o.get("ollama_url", "http://localhost:11434").rstrip("/")
         self.timeout = o.get("timeout_seconden", 30)
-        self.systeem = pad(o.get("prompt", "prompts/opschonen.md")).read_text(encoding="utf-8")
+        self.systeem = pad(o.get("prompt", "prompts/opschonen.md")).read_text(encoding="utf-8-sig")
 
     def _ollama(self, tekst: str, timeout: float | None = None) -> str:
         body = {
@@ -69,12 +86,23 @@ class Opschoner:
         return re.sub(r"</?transcript>", "", uit).strip()
 
     def opwarmen(self) -> None:
-        """Laadt het LLM alvast in het geheugen, zodat de eerste dicteerbeurt niet traag is."""
-        if self.llm_aan:
-            try:
-                self._ollama("Test.", timeout=180)  # eerste keer laden kan lang duren
-            except Exception as e:  # noqa: BLE001
-                log.warning("Ollama niet bereikbaar (%s): opschonen enkel met regels", e)
+        """Laadt het LLM alvast in het geheugen, zodat de eerste dicteerbeurt niet traag is.
+
+        Lukt dat niet, dan zetten we het LLM uit voor deze sessie: één duidelijke melding
+        in plaats van een waarschuwing bij elk stuk tekst.
+        """
+        if not self.llm_aan:
+            return
+        try:
+            self._ollama("Test.", timeout=180)  # eerste keer laden kan lang duren
+        except Exception as e:  # noqa: BLE001
+            self.llm_aan = False
+            if getattr(e, "code", None) == 404:
+                reden = f"model '{self.model}' ontbreekt (installeer met: ollama pull {self.model})"
+            else:
+                reden = "Ollama draait niet of is niet geïnstalleerd (https://ollama.com)"
+            print(f"Let op: nette zinnen staan uit, want {reden}. "
+                  "Opvulwoorden worden wel weggefilterd.", flush=True)
 
     def schoon(self, tekst: str) -> tuple[str, dict]:
         """Geeft (opgeschoonde tekst, info over wat er gebeurde)."""

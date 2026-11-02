@@ -10,19 +10,22 @@ from pathlib import Path
 # Windows zonder Developer Mode kent geen symlinks; de cache werkt toch, dus geen waarschuwing.
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
-from .gpu import kies_device, registreer_cuda  # noqa: E402
+from .gpu import kies_compute_type, kies_device, registreer_cuda  # noqa: E402
 
 registreer_cuda()  # vóór ctranslate2/onnxruntime laden
 
-import av  # noqa: E402
-import numpy as np  # noqa: E402
-from faster_whisper import WhisperModel  # noqa: E402
+try:
+    import av
+    import numpy as np
+    from faster_whisper import WhisperModel
+except ImportError as e:  # meestal: Windows (Smart App Control) blokkeert een onderdeel
+    if "DLL load failed" in str(e):
+        from .windows_blokkade import UITLEG
+
+        raise SystemExit(f"\n{UITLEG}\n(technisch: {e})") from e
+    raise
 
 from .config import pad  # noqa: E402
-
-# Standaard rekenprecisie per apparaat (compute_type: auto in config.yaml).
-# int8 ook op de GPU: op een GTX 1650 Ti is float16 ~3,5x trager dan int8 (gemeten).
-COMPUTE_TYPE = {"cuda": "int8", "cpu": "int8"}
 
 log = logging.getLogger(__name__)
 
@@ -81,7 +84,7 @@ def lees_vocabulaire(bestand: Path) -> str:
     if not bestand.exists():
         return ""
     termen: list[str] = []
-    for lijn in bestand.read_text(encoding="utf-8").splitlines():
+    for lijn in bestand.read_text(encoding="utf-8-sig").splitlines():  # -sig: Kladblok-BOM
         lijn = lijn.strip()
         if not lijn or lijn.startswith("#"):
             continue
@@ -89,19 +92,29 @@ def lees_vocabulaire(bestand: Path) -> str:
     return ", ".join(termen)
 
 
+def _model_ontbreekt(fout: Exception) -> bool:
+    """True als de fout betekent dat het model nog niet gedownload is (huggingface_hub)."""
+    tekst = f"{type(fout).__name__} {fout}".lower()
+    return any(s in tekst for s in ("localentrynotfound", "snapshot", "local_files_only",
+                                    "outgoing traffic has been disabled", "not found"))
+
+
 class Transcriber:
     def __init__(self, cfg: dict, model: str | None = None):
         w = cfg["whisper"]
         self.cfg = w
         self.device = kies_device(w.get("device"))
+        naam = model or w["model"]
         try:
-            self.modelnaam, self.model = self._laad(model or w["model"], w.get("fallback_model"))
-        except RuntimeError:
+            self.modelnaam, self.model = self._laad(naam, w.get("fallback_model"))
+            if self.device == "cuda":
+                self._test_gpu()
+        except Exception as e:  # noqa: BLE001 - GPU-problemen mogen de app niet blokkeren
             if self.device == "cpu":
                 raise
-            log.warning("Laden op de GPU mislukt, val terug op CPU")
+            print(f"GPU werkt niet ({e}); de app gebruikt de CPU (trager).")
             self.device = "cpu"
-            self.modelnaam, self.model = self._laad(model or w["model"], w.get("fallback_model"))
+            self.modelnaam, self.model = self._laad(naam, w.get("fallback_model"))
         vocab = lees_vocabulaire(pad(cfg["paden"]["vocabulaire"]))
         # Whisper neemt de stijl van de prompt over: een zin met hoofdletters en leestekens
         # vooraan zorgt dat het transcript ook leestekens krijgt.
@@ -111,26 +124,46 @@ class Transcriber:
 
     def _laad(self, naam: str, fallback: str | None) -> tuple[str, WhisperModel]:
         kandidaten = [naam] + ([fallback] if fallback and fallback != naam else [])
+        self.compute_type = kies_compute_type(self.device, self.cfg.get("compute_type", "auto"))
         laatste_fout = None
         for kandidaat in kandidaten:
             # Eerst enkel lokaal (geen netwerk); alleen downloaden als het model er nog niet is.
-            for lokaal in (True, False):
-                try:
-                    log.info("Whisper-model laden: %s (lokaal=%s)", kandidaat, lokaal)
-                    ct = self.cfg.get("compute_type", "auto")
-                    model = WhisperModel(
-                        kandidaat,
-                        device=self.device,
-                        compute_type=COMPUTE_TYPE[self.device] if ct == "auto" else ct,
-                        cpu_threads=self.cfg.get("cpu_threads", 0),
-                        download_root=str(pad(self.cfg.get("model_map", "models"))),
-                        local_files_only=lokaal,
-                    )
-                    return kandidaat, model
-                except Exception as e:  # noqa: BLE001 - val terug op download / volgend model
-                    log.warning("Model %s laadt niet (lokaal=%s): %s", kandidaat, lokaal, e)
+            try:
+                return kandidaat, self._maak_model(kandidaat, lokaal=True)
+            except Exception as e:  # noqa: BLE001
+                if not _model_ontbreekt(e):
+                    if self.device == "cuda":
+                        raise  # GPU-fout: downloaden helpt niet, de aanroeper valt terug op CPU
+                    log.warning("Model %s laadt niet: %s", kandidaat, e)  # bv. tikfout in naam
                     laatste_fout = e
+                    continue
+                log.info("Model %s nog niet lokaal aanwezig", kandidaat)
+            print(f"Spraakmodel '{kandidaat}' wordt eenmalig gedownload "
+                  "(large-v3-turbo: ~1,6 GB). Dit kan enkele minuten duren...", flush=True)
+            try:
+                return kandidaat, self._maak_model(kandidaat, lokaal=False)
+            except Exception as e:  # noqa: BLE001 - probeer het reservemodel
+                log.warning("Model %s laadt niet: %s", kandidaat, e)
+                laatste_fout = e
         raise RuntimeError(f"Geen enkel Whisper-model kon laden: {laatste_fout}")
+
+    def _maak_model(self, naam: str, lokaal: bool) -> WhisperModel:
+        log.info("Whisper-model laden: %s (%s, %s, lokaal=%s)",
+                 naam, self.device, self.compute_type, lokaal)
+        return WhisperModel(
+            naam,
+            device=self.device,
+            compute_type=self.compute_type,
+            cpu_threads=self.cfg.get("cpu_threads", 0),
+            download_root=str(pad(self.cfg.get("model_map", "models"))),
+            local_files_only=lokaal,
+        )
+
+    def _test_gpu(self) -> None:
+        """Eén seconde stilte omzetten: CUDA/cuDNN-problemen komen pas hier aan het licht."""
+        segmenten, _ = self.model.transcribe(
+            np.zeros(16000, dtype=np.float32), language="nl", beam_size=1, vad_filter=False)
+        list(segmenten)
 
     def _kort_in(self, tekst: str) -> str:
         """Kort de prompt in tot de tokenlimiet; de eerste termen blijven behouden."""
@@ -180,8 +213,13 @@ class OnnxTranscriber:
     """
 
     def __init__(self, cfg: dict, naam: str):
-        import onnx_asr
+        try:
+            import onnx_asr
+        except ImportError as e:
+            raise RuntimeError(
+                "onnx-asr is niet geïnstalleerd: pip install -r requirements-extra.txt") from e
 
+        self.device = "cpu"
         w = cfg["whisper"]
         self.cfg = w
         self.modelnaam = naam

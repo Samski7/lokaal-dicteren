@@ -1,34 +1,61 @@
 @echo off
-rem Eenmalige installatie: Python-omgeving + pakketten (+ GPU-pakketten als er een NVIDIA-kaart is).
+setlocal
+rem Eenmalige installatie: Python-omgeving, pakketten, GPU-ondersteuning, spraakmodel en controle.
+rem Opnieuw uitvoeren mag altijd (bv. na een update of als Windows iets blokkeert).
 cd /d "%~dp0"
 
-where py >nul 2>nul || (
-  echo Python niet gevonden. Installeer Python 3.11 of nieuwer via https://www.python.org
-  pause & exit /b 1
+rem --- Python kiezen: een geteste versie, niet zomaar de nieuwste ---------------------------
+rem (Python 3.15 is nog te nieuw voor sommige pakketten; 3.11 t.e.m. 3.14 werken.)
+set "PY="
+for %%V in (3.13 3.12 3.14 3.11) do (
+  if not defined PY (
+    py -%%V -c "import sys" >nul 2>nul && set "PY=py -%%V"
+  )
 )
+rem Geen py-launcher, bv. Python uit de Microsoft Store: probeer "python" zelf.
+if not defined PY (
+  python -c "import sys; sys.exit(0 if (3, 11) <= sys.version_info[:2] <= (3, 14) else 1)" >nul 2>nul && set "PY=python"
+)
+if not defined PY (
+  echo Geen geschikte Python gevonden. Installeer Python 3.13 via
+  echo https://www.python.org/downloads/  ^(vink "Add python.exe to PATH" aan^)
+  echo en start dit bestand daarna opnieuw.
+  pause
+  exit /b 1
+)
+echo Python: %PY%
 
 if not exist ".venv\Scripts\python.exe" (
   echo Python-omgeving aanmaken...
-  py -3 -m venv .venv || (pause & exit /b 1)
+  %PY% -m venv .venv
+  if errorlevel 1 ( pause & exit /b 1 )
 )
 
-echo Pakketten installeren (dit kan enkele minuten duren)...
+echo Pakketten installeren ^(dit kan enkele minuten duren^)...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
-".venv\Scripts\python.exe" -m pip install -r requirements.txt || (pause & exit /b 1)
+".venv\Scripts\python.exe" -m pip install -r requirements.txt
+if errorlevel 1 (
+  echo Installeren van de pakketten mislukte. Zie de fout hierboven.
+  pause
+  exit /b 1
+)
 
-where nvidia-smi >nul 2>nul && (
-  echo NVIDIA-GPU gevonden: GPU-pakketten installeren...
+where nvidia-smi >nul 2>nul
+if not errorlevel 1 (
+  echo NVIDIA-GPU gevonden: GPU-ondersteuning installeren ^(~1 GB^)...
   ".venv\Scripts\python.exe" -m pip install -r requirements-gpu.txt
 )
 
-where ollama >nul 2>nul && (
-  echo Ollama gevonden: taalmodel voor het opschonen ophalen...
-  ollama pull gemma4:e2b-it-qat
-) || (
-  echo Ollama niet gevonden: opschonen gebeurt enkel met regels.
-  echo Wil je ook nette zinnen? Installeer Ollama via https://ollama.com en start dit opnieuw.
-)
+rem Smart App Control (Windows 11) blokkeert soms een pas uitgebrachte pakketversie:
+rem dan automatisch een vorige versie kiezen die Windows wel vertrouwt.
+echo.
+".venv\Scripts\python.exe" -m app.windows_blokkade
 
 echo.
-echo Klaar! Start dicteer.bat om te dicteren, of start.bat voor de web-app.
+echo Spraakmodel downloaden en alles testen...
+".venv\Scripts\python.exe" -m app.voorbereiden
+
+echo.
+echo Optioneel, kan ook later: dubbelklik nette-zinnen-aan.bat voor nette zinnen
+echo via een lokaal taalmodel ^(Ollama, ~3 GB^).
 pause

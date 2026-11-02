@@ -13,30 +13,73 @@ programma. Geen abonnement, geen cloud: je audio verlaat je pc nooit.
 - **Extra's**: een web-app (opnemen of uploaden, ook vanaf je gsm), een CLI voor audiobestanden,
   en `eval.py` om spraakmodellen objectief te vergelijken.
 
-Enkel bij de eerste start worden de modellen eenmalig gedownload (~1,6 GB voor Whisper,
-~3 GB voor gemma4); daarna werkt alles offline.
+Enkel bij de eerste start wordt het spraakmodel eenmalig gedownload (~1,6 GB); daarna werkt
+alles offline. Nette zinnen (taalmodel, ~3 GB) zijn optioneel en kan je later aanzetten.
 
 ## Snel starten
 
-Nodig: Windows 10/11, [Python 3.11+](https://www.python.org/downloads/), en optioneel
-[Ollama](https://ollama.com) voor nette zinnen.
+Nodig:
+
+- Windows 10/11 (Smart App Control mag aan blijven, zie [hieronder](#smart-app-control))
+- [Python 3.13](https://www.python.org/downloads/) (3.11 t.e.m. 3.14 werken; 3.15 is nog te nieuw).
+  Vink bij het installeren **"Add python.exe to PATH"** aan.
+- 8 GB RAM, ~3 GB vrije schijfruimte (+3 GB voor nette zinnen)
+- Optioneel: een NVIDIA-videokaart (veel sneller)
 
 1. Download deze repo (groene knop **Code → Download ZIP**, of `git clone`) en pak hem uit.
-2. Dubbelklik **`installeer.bat`** (eenmalig, enkele minuten). Dat installeert alles, ook de
-   GPU-ondersteuning als je een NVIDIA-kaart hebt, en haalt het taalmodel op als Ollama er is.
+2. Dubbelklik **`installeer.bat`** (eenmalig, 5–15 minuten). Dat installeert alles, ook de
+   GPU-ondersteuning als je een NVIDIA-kaart hebt, downloadt het spraakmodel (~1,6 GB) en test
+   op het einde of alles werkt.
+   Windows toont misschien *"Windows heeft uw pc beschermd"*: kies **Meer info → Toch uitvoeren**.
 3. Dubbelklik **`dicteer.bat`**, wacht op *Klaar*, klik in een tekstvak en druk
    **Ctrl + Shift + Spatie**.
 
-Handmatig installeren kan ook:
+Je kan meteen dicteren: "euh" en "ehm" worden al weggefilterd.
+
+### Later: nette zinnen (optioneel)
+
+Wil je dat een lokaal taalmodel er nette zinnen van maakt (en bij "morgen, nee overmorgen"
+enkel "overmorgen" houdt)? Dubbelklik **`nette-zinnen-aan.bat`**. Dat:
+
+1. kijkt of [Ollama](https://ollama.com) geïnstalleerd is (zo niet, opent het de downloadpagina:
+   installeer Ollama en dubbelklik daarna opnieuw);
+2. downloadt het taalmodel `gemma4:e2b-it-qat` (~3 GB, eenmalig);
+3. test het met een voorbeeldzin en zet het aan.
+
+Herstart daarna `dicteer.bat`. Uitzetten: **`nette-zinnen-uit.bat`**. Kost ~3,5 s extra per stuk
+tekst met een NVIDIA-GPU, meer zonder.
+
+### Handmatig installeren
 
 ```powershell
-py -3 -m venv .venv
+py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pip install -r requirements-gpu.txt   # enkel met NVIDIA-GPU
-ollama pull gemma4:e2b-it-qat                                       # enkel voor opschonen
+.\.venv\Scripts\python.exe -m pip install -r requirements-gpu.txt     # enkel met NVIDIA-GPU
+.\.venv\Scripts\python.exe -m pip install -r requirements-extra.txt   # enkel voor eval.py
+.\.venv\Scripts\python.exe -m app.windows_blokkade                    # Smart App Control
+.\.venv\Scripts\python.exe -m app.voorbereiden                        # download + test
 ```
 
 ffmpeg en een aparte CUDA-installatie zijn niet nodig.
+
+### Smart App Control
+
+Windows 11 kan met *Smart App Control* bestanden blokkeren die Microsoft nog niet goed kent,
+zoals een pas uitgebrachte versie van een Python-pakket. Je hoeft het **niet** uit te zetten:
+`installeer.bat` controleert dat en kiest automatisch een vorige versie die Windows wel
+vertrouwt. Krijg je later toch de melding *"Windows (Smart App Control) blokkeert een
+onderdeel"*, dubbelklik dan gewoon opnieuw `installeer.bat`.
+
+### Eigen instellingen
+
+Zet je eigen instellingen in **`config.lokaal.yaml`** (naast `config.yaml`). Wat daarin staat,
+overschrijft `config.yaml`, en bij een update van de app blijft het behouden. Bijvoorbeeld:
+
+```yaml
+dicteren:
+  sneltoets: "<ctrl>+<alt>+<shift>+d"
+  microfoon: 2
+```
 
 ## Dicteren (tekst bij je cursor)
 
@@ -52,10 +95,10 @@ Dubbelklik op `dicteer.bat`. Na een paar seconden staat er *Klaar*.
 
 Laat het venster open (minimaliseren mag). Audio komt nooit op schijf.
 
-**Opschonen**: "euh", "ehm" ... worden altijd weggefilterd. Met `opschonen.llm: true` maakt
-gemma4 er ook nette zinnen van en houdt het bij een verbetering ("morgen, nee overmorgen")
-enkel de verbeterde versie. Dat kost ~3,5 s extra per stuk; zet het op `false` als je snelheid
-belangrijker vindt. Als Ollama niet draait, gaat het gewoon verder zonder.
+**Opschonen**: "euh", "ehm" ... worden altijd weggefilterd, net als zinnen die Whisper bij ruis
+soms verzint ("Ondertiteling door de Amara.org gemeenschap"). Met nette zinnen aan (zie
+hierboven) maakt gemma4 er ook mooie zinnen van. Als Ollama niet draait, gaat het gewoon verder
+zonder, met één melding.
 
 **Veiligheid**: de tekst wordt enkel geplakt in het venster waar je begon te dicteren. Wissel
 je ondertussen van programma, dan wordt er niets geplakt: de tekst staat dan op het klembord
@@ -68,8 +111,9 @@ verworpen en krijg je je eigen tekst (zonder opvulwoorden).
 - Er kan maar één dicteervenster tegelijk draaien; een tweede weigert te starten (anders wordt
   alles dubbel geplakt).
 - In programma's die als administrator draaien kan Windows het plakken blokkeren.
-- Andere sneltoets of microfoon: zie `dicteren` in `config.yaml`
-  (microfoons tonen: `.\.venv\Scripts\python.exe -m app.dicteer --microfoons`).
+- Andere sneltoets of microfoon: zie `dicteren` in `config.yaml` en zet je keuze in
+  `config.lokaal.yaml` (microfoons tonen: `.\.venv\Scripts\python.exe -m app.dicteer --microfoons`).
+- Is het klembord bezet door een ander programma, dan wordt de tekst letter per letter getypt.
 
 ## Web-UI (pc en gsm)
 
@@ -124,6 +168,7 @@ De eerste keer duurt het laden langer (download ~1,6 GB voor `large-v3-turbo`).
 
 ## Modellen vergelijken (`eval.py`)
 
+Eerst de extra pakketten: `.\.venv\Scripts\python.exe -m pip install -r requirements-extra.txt`.
 Zet testopnames in een map als paren `naam.wav` + `naam.txt` (wat er echt gezegd is) en run:
 
 ```powershell
@@ -183,13 +228,33 @@ microfoon ─► stukken per pauze (Silero VAD) ─► Whisper (GPU/CPU) ─► 
 | `app/gpu.py` | CUDA-bibliotheken vinden, GPU of CPU kiezen |
 | `app/web.py` + `app/static/index.html` | web-app |
 | `app/cli.py` | audiobestanden omzetten |
+| `app/voorbereiden.py` | controle na installatie (model, GPU, microfoon, Ollama) |
+| `app/windows_blokkade.py` | Smart App Control: geblokkeerde pakketten vervangen |
+| `app/nette_zinnen.py` | taalmodel (Ollama) aan- of uitzetten |
+| `app/config.py` | `config.yaml` + `config.lokaal.yaml` |
 | `eval.py` | modellen vergelijken |
+
+## Problemen oplossen
+
+| Probleem | Oplossing |
+| --- | --- |
+| *"Windows (Smart App Control) blokkeert een onderdeel"* of `DLL load failed ... Application Control policy` | Dubbelklik opnieuw `installeer.bat`: dat kiest automatisch een versie die Windows vertrouwt. Lukt het niet, probeer het enkele dagen later opnieuw (Windows leert nieuwe versies kennen). |
+| *"Windows heeft uw pc beschermd"* bij een `.bat` | Meer info → Toch uitvoeren (gebeurt bij bestanden uit een ZIP van het internet). |
+| Installatie faalt op `onnxruntime` of een ander pakket | Gebruik Python 3.13 (3.15 is nog te nieuw voor sommige pakketten). |
+| "De microfoon gaf enkel stilte" | Instellingen → Privacy en beveiliging → Microfoon → *Bureaublad-apps toegang geven* aan; controleer de standaardmicrofoon. |
+| Sneltoets doet niets | Draait er nog een tweede dicteervenster? Of gebruikt een ander programma dezelfde sneltoets? Kies een andere in `config.yaml`. |
+| Er wordt oude klembordtekst geplakt | Verhoog `dicteren.plak_wacht_ms` (bv. 1500). |
+| "GPU werkt niet ... de app gebruikt de CPU" | Werk je NVIDIA-stuurprogramma bij en herinstalleer `requirements-gpu.txt`; tot dan werkt alles op de CPU. |
+| "nette zinnen staan uit, want ..." | Ollama draait niet of het model ontbreekt: dubbelklik `nette-zinnen-aan.bat`. |
+| Spraakmodel downloaden faalt | Controleer je internet (enkel nodig bij de eerste start) en voer `installeer.bat` opnieuw uit. |
 
 ## Beperkingen
 
 - Dicteren werkt enkel op Windows (klembord, sneltoets en geluidjes via de Windows-API).
   De web-app en CLI werken ook op macOS/Linux.
 - Op een CPU zonder NVIDIA-GPU duurt het omzetten ongeveer even lang als de opname.
+- Na het plakken wordt je vorige klembord teruggezet, maar enkel als dat tekst was
+  (een gekopieerde afbeelding of een gekopieerd bestand ben je kwijt).
 
 ## Licentie en dank
 

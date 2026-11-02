@@ -16,13 +16,21 @@ import sys
 import threading
 import time
 
-import av
-import numpy as np
-import sounddevice as sd
-from faster_whisper.vad import VadOptions, get_speech_timestamps
-from pynput import keyboard
+try:
+    import av
+    import numpy as np
+    import sounddevice as sd
+    from faster_whisper.vad import VadOptions, get_speech_timestamps
+    from pynput import keyboard
+except ImportError as e:  # meestal: Windows (Smart App Control) blokkeert een onderdeel
+    if "DLL load failed" in str(e):
+        from .windows_blokkade import UITLEG
+
+        raise SystemExit(f"\n{UITLEG}\n(technisch: {e})") from e
+    raise
 
 from .config import laad_config
+from .opschonen import is_hallucinatie
 
 log = logging.getLogger("dicteer")
 SR = 16000  # wat de spraakmodellen verwachten
@@ -100,8 +108,14 @@ class Dicteerder:
         self.live = d.get("live", True)
         self.pauze_ms = d.get("pauze_ms", 700)
         self.max_stuk = d.get("max_stuk_seconden", 25)
+        self.plak_wacht = d.get("plak_wacht_ms", 800) / 1000
         self.apparaat = d.get("microfoon")  # None = standaardmicrofoon
-        info = sd.query_devices(self.apparaat, kind="input")
+        try:
+            info = sd.query_devices(self.apparaat, kind="input")
+        except Exception as e:  # noqa: BLE001 - geen (of verkeerde) microfoon
+            raise RuntimeError(
+                "Geen microfoon gevonden. Sluit er een aan of kies er een met 'microfoon' in "
+                "config.yaml (lijst: python -m app.dicteer --microfoons).") from e
         self.micnaam = info["name"]
         self.sr = self._kies_samplerate(int(info["default_samplerate"]))
 
@@ -130,11 +144,20 @@ class Dicteerder:
 
     # --- opnemen -----------------------------------------------------------------------
     def wissel(self) -> None:
-        """Sneltoets: start of stop de opname."""
-        if self.stream is None:
-            self.start_opname()
-        else:
-            self.stop_opname()
+        """Sneltoets: start of stop de opname.
+
+        Een fout hier mag nooit naar pynput doorlekken: dan stopt de sneltoets stilletjes.
+        """
+        try:
+            if self.stream is None:
+                self.start_opname()
+            else:
+                self.stop_opname()
+        except Exception as e:  # noqa: BLE001
+            self.stream = None
+            piep(False)
+            print(f"  ! Microfoon kon niet starten: {e}\n"
+                  "    Is de microfoon aangesloten en niet in gebruik door een ander programma?")
 
     def start_opname(self) -> None:
         self.ruw = queue.Queue()
@@ -165,13 +188,16 @@ class Dicteerder:
     def _verzamel(self, ruw: queue.Queue, stop_evt: threading.Event) -> None:
         """Verzamelt de audio en knipt hem (in live-modus) op pauzes in stukken."""
         buf = np.zeros(0, dtype=np.float32)
+        piek = 0.0  # luidste sample: 0 = de microfoon levert enkel stilte
         while True:
             gestopt = stop_evt.wait(0.25)
             blokken = []
             while not ruw.empty():
                 blokken.append(ruw.get_nowait())
             if blokken:
-                buf = np.concatenate([buf, naar_16khz(np.concatenate(blokken), self.sr)])
+                nieuw = naar_16khz(np.concatenate(blokken), self.sr)
+                piek = max(piek, float(np.abs(nieuw).max(initial=0.0)))
+                buf = np.concatenate([buf, nieuw])
             if gestopt:
                 break
             if self.live:
@@ -179,6 +205,11 @@ class Dicteerder:
             if time.monotonic() - self.start_tijd > self.max_sec:
                 print("  Maximale opnameduur bereikt.")
                 threading.Thread(target=self.stop_opname, daemon=True).start()
+        if piek < 1e-4:
+            print("  ! De microfoon gaf enkel stilte. Controleer in Windows: Instellingen > "
+                  "Privacy en beveiliging > Microfoon > 'Bureaublad-apps toegang geven' (aan), "
+                  "en of de juiste microfoon gekozen is.")
+            return
         # Restant na het stoppen: enkel doorsturen als er spraak in zit.
         if len(buf) > SR // 2 and get_speech_timestamps(buf, self.vad):
             self.werk.put(buf)
@@ -209,7 +240,7 @@ class Dicteerder:
             stuk = self.werk.get()
             try:
                 t = self.transcriber.transcribeer(stuk)
-                if not t.tekst:
+                if not t.tekst or is_hallucinatie(t.tekst):
                     continue
                 tekst, info = self.opschoner.schoon(t.tekst) if self.opschonen else (t.tekst, {})
                 if not tekst:
@@ -221,10 +252,13 @@ class Dicteerder:
                     from . import klembord
 
                     self.gemist.append(tekst)
-                    klembord.schrijf(" ".join(self.gemist))
                     piep(False)
-                    print(f"    ! Ander venster actief ({actief_venster()}): niet geplakt. "
-                          "De tekst staat op het klembord (Ctrl+V).")
+                    try:
+                        klembord.schrijf(" ".join(self.gemist))
+                        waar = "De tekst staat op het klembord (Ctrl+V)."
+                    except OSError:
+                        waar = "Kopieer de tekst hierboven uit dit venster."
+                    print(f"    ! Ander venster actief ({actief_venster()}): niet geplakt. {waar}")
                     continue
                 print(f"    → in: {actief_venster()}")
                 self.typ(tekst)
@@ -246,14 +280,25 @@ class Dicteerder:
         """
         from . import klembord
 
-        vorige = klembord.lees()
-        klembord.schrijf(tekst)
+        try:
+            vorige = klembord.lees()
+            klembord.schrijf(tekst)
+        except OSError:
+            # Klembord bezet door een ander programma: dan maar typen, tekst nooit verliezen.
+            print("    ! Klembord is bezet door een ander programma: tekst wordt getypt.")
+            self.toetsenbord.type(tekst)
+            return
+        # Virtuele toetscode van V (0x56): werkt op elk toetsenbord (AZERTY, QWERTY, Dvorak...).
         with self.toetsenbord.pressed(keyboard.Key.ctrl):
-            self.toetsenbord.tap("v")
-        # Het doelprogramma leest het klembord asynchroon: even wachten voor we terugzetten.
-        time.sleep(0.5)
+            self.toetsenbord.tap(keyboard.KeyCode.from_vk(0x56))
+        # Het doelprogramma leest het klembord asynchroon: even wachten voor we terugzetten,
+        # anders plakt een traag programma je óude klembord.
+        time.sleep(self.plak_wacht)
         if vorige is not None:
-            klembord.schrijf(vorige)
+            try:
+                klembord.schrijf(vorige)
+            except OSError:
+                pass  # vorige klembord terugzetten is mooi, maar niet essentieel
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -264,8 +309,9 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    for stroom in (sys.stdout, sys.stderr):
+        if hasattr(stroom, "reconfigure"):
+            stroom.reconfigure(encoding="utf-8", errors="replace")
 
     if args.microfoons:
         for i, dev in enumerate(sd.query_devices()):
@@ -283,8 +329,19 @@ def main(argv: list[str] | None = None) -> int:
     sneltoets = args.sneltoets or d_cfg.get("sneltoets", "<ctrl>+<shift>+<space>")
     model = args.model or d_cfg.get("model")
 
+    try:
+        keyboard.HotKey.parse(sneltoets)  # vooraf controleren, voor het trage laden
+    except ValueError:
+        print(f"Ongeldige sneltoets in config.yaml: {sneltoets!r}. "
+              "Voorbeeld: \"<ctrl>+<shift>+<space>\".")
+        return 1
+
     print("Modellen laden...")
-    d = Dicteerder(cfg, model)
+    try:
+        d = Dicteerder(cfg, model)
+    except RuntimeError as e:
+        print(f"\n{e}")
+        return 1
     threading.Thread(target=d.verwerk_lus, daemon=True).start()
     threading.Thread(target=d.opschoner.opwarmen, daemon=True).start()
 
@@ -293,6 +350,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nKlaar. Spraakmodel: {d.transcriber.modelnaam} ({device}){llm} | microfoon: {d.micnaam}")
     print(f"Sneltoets: {sneltoets}  (1x = start, nog 1x = stop)"
           f"  | live: {'aan' if d.live else 'uit'}")
+    if not d.opschoner.llm_aan:
+        print("Nette zinnen: uit (optioneel; aanzetten met nette-zinnen-aan.bat)")
     print("Laat dit venster open (mag geminimaliseerd). Stoppen: Ctrl+C of venster sluiten.\n")
 
     with keyboard.GlobalHotKeys({sneltoets: d.wissel}) as luisteraar:

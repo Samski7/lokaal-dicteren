@@ -1,0 +1,4 @@
+# Optioneel: modellen vergelijken met eval.py, en NVIDIA Parakeet/Canary via onnx-asr.
+# Niet nodig om te dicteren. Let op: onnxruntime heeft (nog) geen versie voor Python 3.15.
+onnx-asr[cpu,hub]>=0.7,<1
+jiwer>=3.0,<5
