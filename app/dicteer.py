@@ -31,6 +31,7 @@ except ImportError as e:  # meestal: Windows (Smart App Control) blokkeert een o
 
 from .config import laad_config
 from .opschonen import is_hallucinatie
+from .reclame import toon as toon_maker
 
 log = logging.getLogger("dicteer")
 SR = 16000  # wat de spraakmodellen verwachten
@@ -336,6 +337,7 @@ def main(argv: list[str] | None = None) -> int:
               "Voorbeeld: \"<ctrl>+<shift>+<space>\".")
         return 1
 
+    toon_maker()
     print("Modellen laden...")
     try:
         d = Dicteerder(cfg, model)

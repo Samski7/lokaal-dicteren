@@ -258,6 +258,13 @@ microfoon ─► stukken per pauze (Silero VAD) ─► Whisper (GPU/CPU) ─► 
 - Na het plakken wordt je vorige klembord teruggezet, maar enkel als dat tekst was
   (een gekopieerde afbeelding of een gekopieerd bestand ben je kwijt).
 
+## Gemaakt door Schildermans AI
+
+Deze app is gemaakt door **Schildermans AI**: ik help zelfstandigen en kleine bedrijven in
+Vlaanderen hun administratie en dagelijkse taken te automatiseren met AI (facturen naar de
+boekhouder, inbox-triage, planning, offertes uit een spraakmemo, ...).
+Interesse of een vraag? Mail naar [schildermansai@gmail.com](mailto:schildermansai@gmail.com).
+
 ## Licentie en dank
 
 MIT, zie [LICENSE](LICENSE). Gebouwd op [faster-whisper](https://github.com/SYSTRAN/faster-whisper)

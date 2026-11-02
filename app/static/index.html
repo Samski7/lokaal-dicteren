@@ -22,6 +22,14 @@
     margin: 0; background: var(--bg); color: var(--tekst);
     font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+  .maker {
+    display: grid; gap: 2px; margin-top: 32px; padding-top: 14px;
+    border-top: 1px solid var(--rand); text-align: center; line-height: 1.4;
+  }
+  .maker p { margin: 0; }
+  .maker-door { font-size: 15px; font-weight: 500; }
+  .maker-vraag, .maker-mail { font-size: 14px; color: var(--zacht); }
+  .maker a { color: var(--tekst); }
   main { max-width: 760px; margin: 0 auto; padding: 16px 16px 48px; }
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   h1 { font-size: 1.35rem; margin: 8px 0; }
@@ -95,6 +103,11 @@
       <ol id="segmenten"></ol>
     </details>
   </section>
+  <footer class="maker">
+    <p class="maker-door">Gratis aangeboden door Schildermans AI.</p>
+    <p class="maker-vraag">Repetitieve taken sneller afhandelen met AI?</p>
+    <p class="maker-mail">Mail naar <a href="mailto:schildermansai@gmail.com">schildermansai@gmail.com</a></p>
+  </footer>
 </main>
 
 <script>

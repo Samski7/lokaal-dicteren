@@ -18,6 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
 from .config import PROJECT_MAP, laad_config, pad
+from .reclame import toon as toon_maker
 
 log = logging.getLogger("spraak")
 STATIC = Path(__file__).parent / "static"
@@ -114,7 +115,9 @@ def main() -> None:
         ssl = {"ssl_certfile": str(cert), "ssl_keyfile": str(key)}
         schema = "https"
 
-    print("\nSpraak naar tekst - open in je browser:")
+    print()
+    toon_maker()
+    print("Spraak naar tekst - open in je browser:")
     print(f"  deze pc : {schema}://localhost:{args.poort}")
     if args.host == "0.0.0.0":
         for ip in lan_ips():
