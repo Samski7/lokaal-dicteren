@@ -1,5 +1,6 @@
 # Optioneel: NVIDIA-GPU (CUDA 12) zonder aparte CUDA-installatie (~1 GB).
 # Zonder deze pakketten (of zonder NVIDIA-kaart) draait alles gewoon op de CPU.
-nvidia-cublas-cu12
-nvidia-cudnn-cu12
-nvidia-cuda-runtime-cu12
+# ctranslate2 4.x is gebouwd voor CUDA 12 en cuDNN 9: een latere cuDNN zou de GPU breken.
+nvidia-cublas-cu12>=12,<13
+nvidia-cudnn-cu12>=9,<10
+nvidia-cuda-runtime-cu12>=12,<13

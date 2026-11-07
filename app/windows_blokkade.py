@@ -4,7 +4,9 @@ Smart App Control laat enkel bestanden toe die Microsoft "kent". Een pakketversi
 uitgebracht is, wordt daardoor soms geblokkeerd, terwijl de versie ervoor wel mag. Dit script:
 
 1. zoekt in de Python-omgeving naar .pyd/.dll-bestanden die Windows weigert te laden;
-2. installeert voor zo'n pakket de vorige versie(s), tot Windows de bestanden aanvaardt.
+2. installeert voor zo'n pakket de vorige versie(s), tot Windows de bestanden aanvaardt;
+3. onthoudt de geweigerde versies in constraints.lokaal.txt, zodat installeer.bat ze een
+   volgende keer meteen overslaat (en een nieuwere versie later wel weer probeert).
 
 Windows blijft elk bestand controleren; we kiezen enkel een versie die het al vertrouwt.
 
@@ -25,6 +27,8 @@ GEBLOKKEERD = 4551  # Windows: "An Application Control policy has blocked this f
 MAX_POGINGEN = 8    # zoveel oudere versies proberen we per pakket
 # Getekend door NVIDIA en groot (1 GB+): niet nodig om te controleren.
 OVERSLAAN = ("nvidia-",)
+# Niet in git: hangt af van wat Windows op déze pc vertrouwt.
+CONSTRAINTS = Path(__file__).resolve().parent.parent / "constraints.lokaal.txt"
 
 UITLEG = (
     "Windows (Smart App Control) blokkeert een onderdeel van de app.\n"
@@ -96,9 +100,25 @@ def oudere_versies(naam: str, huidig: str) -> list[str]:
     return ouder[:MAX_POGINGEN]
 
 
+def onthoud_geweigerd(naam: str, versie: str, bestand: Path = CONSTRAINTS) -> None:
+    """Voegt 'naam!=versie' toe aan het pip-constraintsbestand (één regel per pakket)."""
+    regels: dict[str, set[str]] = {}
+    if bestand.exists():
+        for regel in bestand.read_text(encoding="utf-8").splitlines():
+            if "!=" in regel and not regel.startswith("#"):
+                pakket, rest = regel.split("!=", 1)
+                regels[pakket.strip()] = {v.strip().removeprefix("!=") for v in rest.split(",")}
+    regels.setdefault(naam, set()).add(versie)
+    kop = "# Versies die Windows (Smart App Control) op deze pc weigert; zie app/windows_blokkade.py\n"
+    bestand.write_text(kop + "".join(
+        f"{p}!=" + ",!=".join(sorted(v)) + "\n" for p, v in sorted(regels.items())),
+        encoding="utf-8")
+
+
 def herstel(naam: str) -> str | None:
     """Probeert oudere versies tot Windows ze aanvaardt. Geeft de gekozen versie of None."""
     huidig = md.version(naam)
+    onthoud_geweigerd(naam, huidig)
     for versie in oudere_versies(naam, huidig):
         print(f"    probeer {naam} {versie}...", flush=True)
         r = _pip("install", "-q", "--no-deps", "--only-binary=:all:", f"{naam}=={versie}")
@@ -109,6 +129,7 @@ def herstel(naam: str) -> str | None:
                      if f.suffix.lower() in (".pyd", ".dll")]
         if not any(is_geblokkeerd(p) for p in bestanden if p.exists()):
             return versie
+        onthoud_geweigerd(naam, versie)
     # Niets gevonden: zet de oorspronkelijke versie terug, zodat de omgeving consistent blijft.
     _pip("install", "-q", "--no-deps", f"{naam}=={huidig}")
     return None

@@ -45,7 +45,14 @@ if not exist ".venv\Scripts\pip.exe" (
 
 echo Pakketten installeren ^(dit kan enkele minuten duren^)...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip >nul
-".venv\Scripts\python.exe" -m pip install -r requirements.txt
+rem Versies die Windows hier eerder weigerde meteen overslaan (zie app\windows_blokkade.py).
+set "CONSTR="
+if exist "constraints.lokaal.txt" set "CONSTR=-c constraints.lokaal.txt"
+".venv\Scripts\python.exe" -m pip install -r requirements.txt %CONSTR%
+if errorlevel 1 if defined CONSTR (
+  echo Opnieuw proberen zonder de lijst met geweigerde versies...
+  ".venv\Scripts\python.exe" -m pip install -r requirements.txt
+)
 if errorlevel 1 (
   echo Installeren van de pakketten mislukte. Zie de fout hierboven.
   pause

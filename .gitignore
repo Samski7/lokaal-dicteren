@@ -8,6 +8,8 @@ models/
 
 # Eigen instellingen (overschrijven config.yaml; blijven bewaard bij updates)
 config.lokaal.yaml
+# Pakketversies die Smart App Control op deze pc weigert
+constraints.lokaal.txt
 
 # Self-signed certificaat + PRIVÉSLEUTEL van de web-UI
 certs/
