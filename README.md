@@ -226,9 +226,6 @@ microfoon ─► stukken per pauze (Silero VAD) ─► Whisper (GPU/CPU, vorig s
          ─► klembord + Ctrl+V ─► klembord terug
 ```
 
-Omzetten (Whisper) en opschonen (taalmodel) lopen elk in een eigen thread: terwijl het
-taalmodel een stuk opschoont, zet Whisper het volgende al om.
-
 | Bestand | Wat |
 | --- | --- |
 | `app/dicteer.py` | sneltoets, opnemen, live knippen, plakken |
