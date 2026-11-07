@@ -16,7 +16,8 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from .config import bewaar_lokaal, laad_config
+from .config import bewaar_lokaal, laad_config, utf8_console
+from .opschonen import ollama_instellingen, ollama_modellen
 
 DOWNLOAD = "https://ollama.com/download"
 
@@ -26,17 +27,10 @@ def zet_llm(aan: bool) -> None:
     bewaar_lokaal("opschonen", "llm", aan)
 
 
-def _api(url: str, pad: str, data: dict | None = None, timeout: float = 5):
-    req = urllib.request.Request(
-        f"{url}{pad}", data=json.dumps(data).encode() if data is not None else None,
-        headers={"Content-Type": "application/json"})
-    return urllib.request.urlopen(req, timeout=timeout)
-
-
 def ollama_bereikbaar(url: str) -> bool:
     try:
-        with _api(url, "/api/tags"):
-            return True
+        ollama_modellen(url)
+        return True
     except Exception:  # noqa: BLE001
         return False
 
@@ -63,7 +57,10 @@ def start_ollama(url: str) -> bool:
 
 def haal_model(url: str, model: str) -> None:
     """Downloadt het model via de Ollama-API, met voortgang."""
-    with _api(url, "/api/pull", {"model": model, "stream": True}, timeout=3600) as r:
+    req = urllib.request.Request(
+        f"{url}/api/pull", data=json.dumps({"model": model, "stream": True}).encode(),
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=3600) as r:
         laatste = -1
         for lijn in r:
             stap = json.loads(lijn)
@@ -80,9 +77,7 @@ def haal_model(url: str, model: str) -> None:
 
 def aan() -> int:
     cfg = laad_config()
-    o = cfg.get("opschonen", {})
-    url = o.get("ollama_url", "http://localhost:11434").rstrip("/")
-    model = o.get("ollama_model", "gemma4:e2b-it-qat")
+    url, model = ollama_instellingen(cfg)
 
     print("[1/4] Ollama zoeken...")
     if not ollama_bereikbaar(url):
@@ -101,9 +96,7 @@ def aan() -> int:
 
     print(f"[2/4] Taalmodel '{model}' ophalen (eenmalig ~3 GB, kan even duren)...")
     try:
-        with _api(url, "/api/tags") as r:
-            aanwezig = {m["name"] for m in json.loads(r.read()).get("models", [])}
-        if model in aanwezig:
+        if model in ollama_modellen(url):
             print("    Al aanwezig.")
         else:
             haal_model(url, model)
@@ -139,9 +132,7 @@ def uit() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    for stroom in (sys.stdout, sys.stderr):
-        if hasattr(stroom, "reconfigure"):
-            stroom.reconfigure(encoding="utf-8", errors="replace")
+    utf8_console()
     args = argv if argv is not None else sys.argv[1:]
     if args[:1] == ["aan"]:
         return aan()

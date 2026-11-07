@@ -11,19 +11,14 @@ from pathlib import Path
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
 from .gpu import kies_compute_type, kies_device, registreer_cuda  # noqa: E402
+from .windows_blokkade import leg_uit_bij_blokkade  # noqa: E402
 
 registreer_cuda()  # vóór ctranslate2/onnxruntime laden
 
-try:
+with leg_uit_bij_blokkade():  # meestal: Smart App Control blokkeert een onderdeel
     import av
     import numpy as np
     from faster_whisper import WhisperModel
-except ImportError as e:  # meestal: Windows (Smart App Control) blokkeert een onderdeel
-    if "DLL load failed" in str(e):
-        from .windows_blokkade import UITLEG
-
-        raise SystemExit(f"\n{UITLEG}\n(technisch: {e})") from e
-    raise
 
 from .config import pad  # noqa: E402
 

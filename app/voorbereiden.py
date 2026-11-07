@@ -5,18 +5,12 @@ Gebruik (doet installeer.bat automatisch):
 """
 from __future__ import annotations
 
-import json
-import sys
-import urllib.request
+from .config import laad_config, utf8_console
+from .opschonen import ollama_instellingen, ollama_modellen
 
 
 def main() -> int:
-    for stroom in (sys.stdout, sys.stderr):
-        if hasattr(stroom, "reconfigure"):
-            stroom.reconfigure(encoding="utf-8", errors="replace")
-
-    from .config import laad_config
-
+    utf8_console()
     cfg = laad_config()
     ok = True
 
@@ -44,17 +38,13 @@ def main() -> int:
         print(f"      FOUT: geen microfoon gevonden ({e})")
 
     print("[3/3] Ollama (nette zinnen, optioneel)...")
-    o = cfg.get("opschonen", {})
-    if not o.get("llm", False):
+    if not cfg.get("opschonen", {}).get("llm", False):
         print("      Staat uit (niet nodig om te dicteren). Aanzetten kan later met "
               "nette-zinnen-aan.bat.")
     else:
-        url = o.get("ollama_url", "http://localhost:11434").rstrip("/")
-        model = o.get("ollama_model", "gemma4:e2b-it-qat")
+        url, model = ollama_instellingen(cfg)
         try:
-            with urllib.request.urlopen(f"{url}/api/tags", timeout=5) as r:
-                namen = {m["name"] for m in json.loads(r.read()).get("models", [])}
-            if model in namen:
+            if model in ollama_modellen(url):
                 print(f"      OK: {model}")
             else:
                 print(f"      Ollama draait, maar '{model}' ontbreekt: ollama pull {model}")

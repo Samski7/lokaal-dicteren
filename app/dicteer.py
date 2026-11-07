@@ -12,24 +12,19 @@ from __future__ import annotations
 import argparse
 import logging
 import queue
-import sys
 import threading
 import time
 
-try:
+from .windows_blokkade import leg_uit_bij_blokkade
+
+with leg_uit_bij_blokkade():  # meestal: Smart App Control blokkeert een onderdeel
     import av
     import numpy as np
     import sounddevice as sd
     from faster_whisper.vad import VadOptions, get_speech_timestamps
     from pynput import keyboard
-except ImportError as e:  # meestal: Windows (Smart App Control) blokkeert een onderdeel
-    if "DLL load failed" in str(e):
-        from .windows_blokkade import UITLEG
 
-        raise SystemExit(f"\n{UITLEG}\n(technisch: {e})") from e
-    raise
-
-from .config import laad_config
+from .config import laad_config, utf8_console
 from .opschonen import is_hallucinatie
 from .reclame import toon as toon_maker
 
@@ -62,10 +57,8 @@ def actief_venster() -> str:
     try:
         import ctypes
 
-        user32 = ctypes.windll.user32
-        hwnd = user32.GetForegroundWindow()
         buf = ctypes.create_unicode_buffer(256)
-        user32.GetWindowTextW(hwnd, buf, 256)
+        ctypes.windll.user32.GetWindowTextW(actief_hwnd(), buf, 256)
         return buf.value or "(naamloos venster)"
     except Exception:  # noqa: BLE001 - enkel informatief
         return "?"
@@ -310,9 +303,7 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(message)s")
-    for stroom in (sys.stdout, sys.stderr):
-        if hasattr(stroom, "reconfigure"):
-            stroom.reconfigure(encoding="utf-8", errors="replace")
+    utf8_console()
 
     if args.microfoons:
         for i, dev in enumerate(sd.query_devices()):

@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from .config import laad_config, pad
+from .config import laad_config, pad, utf8_console
 
 AUDIO_EXTENSIES = {".wav", ".mp3", ".m4a", ".ogg", ".opus", ".flac", ".webm"}
 
@@ -49,9 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.INFO if args.verbose else logging.WARNING,
         format="%(levelname)s %(message)s",
     )
-    # Console op Windows naar UTF-8 zodat é, ë, ... goed tonen.
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")
+    utf8_console()
 
     for a in args.audio:
         if not a.exists():

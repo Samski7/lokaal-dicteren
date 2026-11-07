@@ -1,4 +1,5 @@
 """Laadt config.yaml (+ eigen instellingen uit config.lokaal.yaml) en zet paden om."""
+import sys
 from pathlib import Path
 
 import yaml
@@ -6,6 +7,13 @@ import yaml
 PROJECT_MAP = Path(__file__).resolve().parent.parent
 # Eigen instellingen: staat niet in git, dus een update overschrijft ze nooit.
 LOKAAL = PROJECT_MAP / "config.lokaal.yaml"
+
+
+def utf8_console() -> None:
+    """Console naar UTF-8: anders crasht een Windows-console op tekens als é, ë of ✓."""
+    for stroom in (sys.stdout, sys.stderr):
+        if hasattr(stroom, "reconfigure"):
+            stroom.reconfigure(encoding="utf-8", errors="replace")
 
 
 def pad(relatief: str) -> Path:

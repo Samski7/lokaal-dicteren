@@ -18,6 +18,7 @@ import importlib.metadata as md
 import re
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 GEBLOKKEERD = 4551  # Windows: "An Application Control policy has blocked this file"
@@ -30,6 +31,18 @@ UITLEG = (
     "Oplossing zonder iets uit te zetten: dubbelklik installeer.bat opnieuw; dat kiest "
     "automatisch een versie die Windows wel vertrouwt."
 )
+
+
+@contextmanager
+def leg_uit_bij_blokkade():
+    """Rond imports van gecompileerde pakketten: een geblokkeerde DLL wordt een duidelijke
+    uitleg in plaats van een traceback."""
+    try:
+        yield
+    except ImportError as e:
+        if "DLL load failed" in str(e):
+            raise SystemExit(f"\n{UITLEG}\n(technisch: {e})") from e
+        raise
 
 
 def is_geblokkeerd(pad: Path) -> bool:

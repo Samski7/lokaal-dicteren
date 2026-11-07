@@ -16,6 +16,22 @@ from .config import pad
 
 log = logging.getLogger(__name__)
 
+OLLAMA_URL = "http://localhost:11434"
+OLLAMA_MODEL = "gemma4:e2b-it-qat"
+
+
+def ollama_instellingen(cfg: dict) -> tuple[str, str]:
+    """(url, model) uit de config, met de standaardwaarden als ze ontbreken."""
+    o = cfg.get("opschonen", {})
+    return o.get("ollama_url", OLLAMA_URL).rstrip("/"), o.get("ollama_model", OLLAMA_MODEL)
+
+
+def ollama_modellen(url: str, timeout: float = 5) -> set[str]:
+    """Namen van de geïnstalleerde Ollama-modellen. OSError als Ollama niet draait."""
+    with urllib.request.urlopen(f"{url}/api/tags", timeout=timeout) as r:
+        return {m["name"] for m in json.loads(r.read()).get("models", [])}
+
+
 OPVULWOORDEN = r"euh+|eh+m*|uh+m*|um+|hm+|ehm+|uhm+|mmm+"
 _OPVUL = re.compile(rf"(?<!\w)(?:{OPVULWOORDEN})(?!\w)[,.]?\s*", re.IGNORECASE)
 
@@ -59,8 +75,7 @@ class Opschoner:
     def __init__(self, cfg: dict):
         o = cfg.get("opschonen", {})
         self.llm_aan = o.get("llm", False)
-        self.model = o.get("ollama_model", "gemma4:e2b-it-qat")
-        self.url = o.get("ollama_url", "http://localhost:11434").rstrip("/")
+        self.url, self.model = ollama_instellingen(cfg)
         self.timeout = o.get("timeout_seconden", 30)
         self.systeem = pad(o.get("prompt", "prompts/opschonen.md")).read_text(encoding="utf-8-sig")
 

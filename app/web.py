@@ -17,7 +17,7 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
-from .config import PROJECT_MAP, laad_config, pad
+from .config import PROJECT_MAP, laad_config, pad, utf8_console
 from .reclame import toon as toon_maker
 
 log = logging.getLogger("spraak")
@@ -108,6 +108,7 @@ def main() -> None:
     args = p.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    utf8_console()
     ssl = {}
     schema = "http"
     if not args.http:

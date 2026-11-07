@@ -26,7 +26,7 @@ except ImportError:
              r".\.venv\Scripts\python.exe -m pip install -r requirements-extra.txt")
 
 from app.asr import lees_audio, maak_transcriber
-from app.config import laad_config, pad
+from app.config import laad_config, pad, utf8_console
 
 AUDIO = {".wav", ".mp3", ".m4a", ".ogg", ".opus", ".flac", ".webm"}
 STANDAARD_MODELLEN = [
@@ -59,7 +59,7 @@ def main() -> int:
     p.add_argument("mappen", nargs="*", type=Path, default=[Path("tests/data")])
     p.add_argument("--modellen", nargs="+", default=STANDAARD_MODELLEN)
     args = p.parse_args()
-    sys.stdout.reconfigure(encoding="utf-8")
+    utf8_console()
 
     paren = zoek_paren(args.mappen)
     if not paren:
