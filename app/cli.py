@@ -23,14 +23,16 @@ def tijd(sec: float) -> str:
     return f"{int(m):02d}:{s:05.2f}"
 
 
-def bewaar(transcript, audio: Path, uitvoermap: Path) -> tuple[Path, Path]:
+def bewaar(transcript, audio: Path, uitvoermap: Path, tekst: str) -> tuple[Path, Path]:
     uitvoermap.mkdir(parents=True, exist_ok=True)
     stempel = datetime.now().strftime("%Y%m%d-%H%M%S")
     basis = uitvoermap / f"{audio.stem}_{stempel}"
     txt, js = basis.with_suffix(".txt"), basis.with_suffix(".json")
-    txt.write_text(transcript.tekst + "\n", encoding="utf-8")
+    txt.write_text(tekst + "\n", encoding="utf-8")
     data = {"bron": audio.name, "aangemaakt": datetime.now().isoformat(timespec="seconds")}
     data.update(transcript.naar_dict())
+    if tekst != transcript.tekst:
+        data["tekst_ruw"], data["tekst"] = transcript.tekst, tekst
     js.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return txt, js
 
@@ -61,6 +63,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.taal:
         cfg["whisper"]["taal"] = None if args.taal == "auto" else args.taal
     from .asr import maak_transcriber  # pas hier: laden van de modellen duurt even
+    from .opschonen import regels
+
+    opschonen = cfg.get("opschonen", {}).get("aan", True)
 
     t0 = time.perf_counter()
     transcriber = maak_transcriber(cfg, model=args.model)
@@ -74,8 +79,12 @@ def main(argv: list[str] | None = None) -> int:
               f"(x{t.duur_audio / max(t.duur_verwerking, 0.01):.1f} realtime) ===")
         for s in t.segmenten:
             print(f"[{tijd(s.start)} -> {tijd(s.einde)}] {s.tekst}")
+        # Zelfde opkuis als bij dicteren; de segmenten (tijdsstempels) blijven ongewijzigd.
+        tekst = regels(t.tekst) if opschonen else t.tekst
+        if tekst != t.tekst:
+            print(f"\nOpgeschoond: {tekst}")
         if not args.niet_opslaan:
-            txt, js = bewaar(t, audio, pad(cfg["paden"]["uitvoer"]))
+            txt, js = bewaar(t, audio, pad(cfg["paden"]["uitvoer"]), tekst)
             print(f"\nOpgeslagen: {txt}\n            {js}")
     return 0
 

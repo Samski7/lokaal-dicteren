@@ -18,6 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 
 from .config import PROJECT_MAP, laad_config, pad, utf8_console
+from .opschonen import regels
 from .reclame import toon as toon_maker
 
 log = logging.getLogger("spraak")
@@ -91,6 +92,8 @@ async def transcribeer(audio: UploadFile):
             doel.unlink(missing_ok=True)
 
     data = t.naar_dict()
+    if cfg.get("opschonen", {}).get("aan", True):  # zelfde opkuis als bij dicteren
+        data["tekst_ruw"], data["tekst"] = t.tekst, regels(t.tekst)
     data["bron"] = audio.filename
     data["audio_bewaard"] = bool(cfg.get("audio_bewaren", False))
     return data

@@ -89,7 +89,9 @@ Dubbelklik op `dicteer.bat`. Na een paar seconden staat er *Klaar*.
 2. Druk **Ctrl + Shift + Spatie**: hoge piep = opnemen.
 3. Spreek in en druk opnieuw **Ctrl + Shift + Spatie**: lage piep = stoppen.
 4. **Live**: telkens je even pauzeert (0,7 s), wordt dat stuk al omgezet en bij je cursor
-   geplakt terwijl je verder spreekt. Het laatste stuk volgt na de stop-piep.
+   geplakt terwijl je verder spreekt. Het laatste stuk volgt na de stop-piep. Pauzeer je
+   midden in een zin, dan loopt die gewoon door: Whisper krijgt het vorige stuk als context
+   en het punt van het vorige stuk komt er pas als er echt een nieuwe zin begint.
 5. Je vorige klembordtekst wordt na het plakken teruggezet. (Staat Windows-klembordgeschiedenis,
    Win+V, aan, dan zie je de gedicteerde tekst daar ook.)
 
@@ -132,6 +134,9 @@ Zet het via Instellingen → Netwerk en internet → Wi-Fi → je netwerk op *Pr
 - **Opnemen**: tik op *Opnemen*, spreek, tik op *Stop*. Het transcript verschijnt daarna.
 - **Bestand kiezen**: upload een opname (bv. uit de dictafoon-app van je gsm).
 - Het transcript is bewerkbaar; kopiëren of downloaden als `.txt`, `.srt` of `.json`.
+- Opvulwoorden en verzonnen zinnen worden weggefilterd, net als bij dicteren
+  (`opschonen.aan`). De `.json` bevat ook de ruwe tekst (`tekst_ruw`); de segmenten in `.srt`
+  blijven ongewijzigd.
 - Geüploade audio wordt meteen na transcriptie verwijderd (`audio_bewaren: false`).
 
 **Eerste keer op de gsm**: de app gebruikt een eigen (self-signed) certificaat, omdat browsers
@@ -161,8 +166,8 @@ Opties:
 | `-v` | meer uitleg (welk model laadt, inkorten vocabulaire) |
 
 Je krijgt het transcript met tijdsstempels per segment in de terminal. Daarnaast komen in
-`uitvoer/` twee bestanden: `<naam>_<tijd>.txt` (platte tekst) en `.json` (met segmenten,
-taal, duur, model en gebruikte prompt).
+`uitvoer/` twee bestanden: `<naam>_<tijd>.txt` (platte tekst, zonder opvulwoorden) en `.json`
+(met segmenten, ruwe tekst, taal, duur, model en gebruikte prompt).
 
 De eerste keer duurt het laden langer (download ~1,6 GB voor `large-v3-turbo`).
 
@@ -216,9 +221,13 @@ automatisch ingekort tot de limiet van Whisper (223 tokens). Herstart daarna `di
 ## Hoe het werkt
 
 ```
-microfoon ─► stukken per pauze (Silero VAD) ─► Whisper (GPU/CPU) ─► opvulwoorden weg
-         ─► [optioneel] gemma4 via Ollama + vangnet ─► klembord + Ctrl+V ─► klembord terug
+microfoon ─► stukken per pauze (Silero VAD) ─► Whisper (GPU/CPU, vorig stuk als context)
+         ─► opvulwoorden weg ─► [optioneel] gemma4 via Ollama + vangnet
+         ─► klembord + Ctrl+V ─► klembord terug
 ```
+
+Omzetten (Whisper) en opschonen (taalmodel) lopen elk in een eigen thread: terwijl het
+taalmodel een stuk opschoont, zet Whisper het volgende al om.
 
 | Bestand | Wat |
 | --- | --- |
@@ -233,12 +242,16 @@ microfoon ─► stukken per pauze (Silero VAD) ─► Whisper (GPU/CPU) ─► 
 | `app/nette_zinnen.py` | taalmodel (Ollama) aan- of uitzetten |
 | `app/config.py` | `config.yaml` + `config.lokaal.yaml` |
 | `eval.py` | modellen vergelijken |
+| `tests/` | `python -m pytest tests` (zonder model of microfoon) en `tests\live_plaktest.py` (live dicteren met testaudio; `--droog` plakt niets) |
+
+Wie zelf aan de code werkt: `pip install -r requirements-extra.txt` installeert ook pytest.
+Testaudio komt van `tests\haal_testdata.py`; zonder die audio worden enkele tests overgeslagen.
 
 ## Problemen oplossen
 
 | Probleem | Oplossing |
 | --- | --- |
-| *"Windows (Smart App Control) blokkeert een onderdeel"* of `DLL load failed ... Application Control policy` | Dubbelklik opnieuw `installeer.bat`: dat kiest automatisch een versie die Windows vertrouwt. Lukt het niet, probeer het enkele dagen later opnieuw (Windows leert nieuwe versies kennen). |
+| *"Windows (Smart App Control) blokkeert een onderdeel"* of `DLL load failed ... Application Control policy` | Dubbelklik opnieuw `installeer.bat`: dat kiest automatisch een versie die Windows vertrouwt en onthoudt de geweigerde versies in `constraints.lokaal.txt`, zodat een volgende installatie ze meteen overslaat. Lukt het niet, probeer het enkele dagen later opnieuw (Windows leert nieuwe versies kennen). |
 | *"Windows heeft uw pc beschermd"* bij een `.bat` | Meer info → Toch uitvoeren (gebeurt bij bestanden uit een ZIP van het internet). |
 | Installatie faalt op `onnxruntime` of een ander pakket | Gebruik Python 3.13 (3.15 is nog te nieuw voor sommige pakketten). |
 | "De map is te diep" / `WinError 206` | Windows kent een limiet van 260 tekens per pad. Verplaats de map naar bv. `C:\lokaal-dicteren`. |
