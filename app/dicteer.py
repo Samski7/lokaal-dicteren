@@ -25,11 +25,14 @@ with leg_uit_bij_blokkade():  # meestal: Smart App Control blokkeert een onderde
     from pynput import keyboard
 
 from .config import laad_config, utf8_console
-from .opschonen import is_hallucinatie
+from .opschonen import begint_klein, is_hallucinatie, loopt_door
 from .reclame import toon as toon_maker
 
 log = logging.getLogger("dicteer")
 SR = 16000  # wat de spraakmodellen verwachten
+VAD_VENSTER = 4 * SR  # live: zoveel audio (achteraan) bekijken om een pauze te vinden
+CONTEXT_WOORDEN = 40  # live: zoveel woorden van het vorige stuk krijgt Whisper als context
+EINDE = None          # in de wachtrijen: de opname is gedaan
 
 
 def piep(hoog: bool) -> None:
@@ -124,7 +127,10 @@ class Dicteerder:
         self.stream: sd.InputStream | None = None
         self.stop_evt = threading.Event()
         self.ruw: queue.Queue[np.ndarray] = queue.Queue()
-        self.werk: queue.Queue[np.ndarray] = queue.Queue()
+        self.werk: queue.Queue = queue.Queue()  # audiostukken om om te zetten (+ EINDE)
+        self.context = ""         # einde van het vorige stuk (zelfde opname), voor Whisper
+        self.open_punt = False    # slotpunt van het vorige stuk nog niet geplakt
+        self.zin_open = False     # vorige stuk eindigde zonder leesteken: zin loopt mogelijk door
         self.doelvenster = 0      # venster waarin je begon te dicteren
         self.gemist: list[str] = []  # tekst die niet geplakt werd omdat je van venster wisselde
 
@@ -203,25 +209,29 @@ class Dicteerder:
             print("  ! De microfoon gaf enkel stilte. Controleer in Windows: Instellingen > "
                   "Privacy en beveiliging > Microfoon > 'Bureaublad-apps toegang geven' (aan), "
                   "en of de juiste microfoon gekozen is.")
-            return
         # Restant na het stoppen: enkel doorsturen als er spraak in zit.
-        if len(buf) > SR // 2 and get_speech_timestamps(buf, self.vad):
+        elif len(buf) > SR // 2 and get_speech_timestamps(buf, self.vad):
             self.werk.put(buf)
         elif not self.live:
             print("  Geen spraak gehoord.")
+        self.werk.put(EINDE)
 
     def _knip(self, buf: np.ndarray) -> np.ndarray:
         """Stuurt afgeronde spraakstukken naar de verwerking; geeft de rest terug."""
         if len(buf) < SR:
             return buf
-        stukken = get_speech_timestamps(buf, self.vad)
+        # Om een pauze te zien volstaan de laatste seconden (er wordt elke 0,25 s gekeken);
+        # enkel een te lang stuk zonder pauze vraagt de hele buffer.
+        lang = len(buf) > self.max_stuk * SR
+        begin = 0 if lang else max(0, len(buf) - VAD_VENSTER)
+        stukken = get_speech_timestamps(buf[begin:], self.vad)
         if not stukken:
             # Enkel stilte: niet eindeloos bijhouden.
             return buf[-SR:] if len(buf) > 5 * SR else buf
-        eind = stukken[-1]["end"]
+        eind = begin + stukken[-1]["end"]
         if len(buf) - eind >= self.pauze_ms * SR // 1000:
             knip = min(len(buf), eind + int(0.15 * SR))
-        elif len(buf) > self.max_stuk * SR and len(stukken) > 1:
+        elif lang and len(stukken) > 1:
             knip = stukken[-1]["start"]  # vóór het lopende stuk spraak knippen
         else:
             return buf
@@ -229,38 +239,78 @@ class Dicteerder:
         return buf[knip:]
 
     # --- omzetten en invoegen ----------------------------------------------------------
+    # Omzetten en opschonen na elkaar, in één thread. Tegelijk (twee threads) was gemeten niet
+    # sneller: Whisper en het taalmodel delen dan de GPU en remmen elkaar af.
     def verwerk_lus(self) -> None:
         while True:
             stuk = self.werk.get()
             try:
-                t = self.transcriber.transcribeer(stuk)
-                if not t.tekst or is_hallucinatie(t.tekst):
+                if stuk is EINDE:
+                    self._opname_klaar()
                     continue
-                tekst, info = self.opschoner.schoon(t.tekst) if self.opschonen else (t.tekst, {})
-                if not tekst:
-                    continue
-                llm = f" + opschonen {info['llm_sec']:.1f} s" if info.get("llm") else ""
-                print(f"  ✓ ({t.duur_audio:.0f} s audio, {t.duur_verwerking:.1f} s{llm}) {tekst}")
-                if self.doelvenster and actief_hwnd() != self.doelvenster:
-                    # Niet in een ander programma plakken dan waar je begon: klembord.
-                    from . import klembord
-
-                    self.gemist.append(tekst)
-                    piep(False)
-                    try:
-                        klembord.schrijf(" ".join(self.gemist))
-                        waar = "De tekst staat op het klembord (Ctrl+V)."
-                    except OSError:
-                        waar = "Kopieer de tekst hierboven uit dit venster."
-                    print(f"    ! Ander venster actief ({actief_venster()}): niet geplakt. {waar}")
-                    continue
-                print(f"    → in: {actief_venster()}")
-                self.typ(tekst)
+                # Live-stukken zijn al op spraak geknipt: Whisper's eigen VAD is dan overbodig.
+                # De vorige tekst als context: een zin die over een pauze loopt, loopt door.
+                t = self.transcriber.transcribeer(stuk, vad=not self.live, context=self.context)
+                if t.tekst and not is_hallucinatie(t.tekst):
+                    if self.live:
+                        self.context = " ".join(t.tekst.split()[-CONTEXT_WOORDEN:]).rstrip(".")
+                    self._voeg_in(t)
             except Exception as e:  # noqa: BLE001 - blijf luisteren, ook na een fout
                 log.exception("Fout bij omzetten: %s", e)
 
+    def _opname_klaar(self) -> None:
+        """Na de laatste tekst van een opname: slotpunt plakken, context wissen."""
+        if self.open_punt and self._zelfde_venster():
+            self.typ("." + (" " if self.spatie_erna else ""))
+        self.open_punt, self.zin_open, self.context = False, False, ""
+
+    def _voeg_in(self, t) -> None:
+        # De zin liep door na een pauze: het vorige stuk wacht nog op zijn punt en dit begint
+        # klein, of het vorige stuk eindigde zonder punt en dit begint met een voegwoord.
+        vervolg = (self.open_punt and begint_klein(t.tekst)) or (
+            self.zin_open and loopt_door(t.tekst))
+        tekst, info = self.opschoner.schoon(t.tekst) if self.opschonen else (t.tekst, {})
+        if not tekst:
+            return
+        if vervolg:  # Whisper of het opschonen zet een hoofdletter vooraan: hier hoort er geen
+            tekst = tekst[:1].lower() + tekst[1:]
+        llm = f" + opschonen {info['llm_sec']:.1f} s" if info.get("llm") else ""
+        print(f"  ✓ ({t.duur_audio:.0f} s audio, {t.duur_verwerking:.1f} s{llm}) {tekst}")
+        if not self._zelfde_venster():
+            # Niet in een ander programma plakken dan waar je begon: klembord.
+            from . import klembord
+
+            self.gemist.append(tekst)
+            self.open_punt = self.zin_open = False
+            piep(False)
+            try:
+                klembord.schrijf(" ".join(self.gemist))
+                waar = "De tekst staat op het klembord (Ctrl+V)."
+            except OSError:
+                waar = "Kopieer de tekst hierboven uit dit venster."
+            print(f"    ! Ander venster actief ({actief_venster()}): niet geplakt. {waar}")
+            return
+        print(f"    → in: {actief_venster()}")
+        self.typ(self._naad(tekst, vervolg))
+
+    def _zelfde_venster(self) -> bool:
+        return not self.doelvenster or actief_hwnd() == self.doelvenster
+
+    def _naad(self, tekst: str, vervolg: bool) -> str:
+        """De tekst zoals hij geplakt wordt, aansluitend op het vorige stuk.
+
+        Live houden we het slotpunt van elk stuk even vast. Loopt de zin na de pauze door
+        ("... tussen twee punten" + "en de interacties ..."), dan vervalt dat punt; anders
+        komt het er alsnog vóór het volgende stuk, of bij het stoppen.
+        """
+        voor = (" " if vervolg else ". ") if self.open_punt else ""
+        self.open_punt = self.live and tekst.endswith(".") and not tekst.endswith("..")
+        self.zin_open = self.live and not tekst.endswith((".", "?", "!", "…", ":"))
+        if self.open_punt:
+            return voor + tekst[:-1]
+        return voor + tekst + (" " if self.spatie_erna else "")
+
     def typ(self, tekst: str) -> None:
-        tekst += " " if self.spatie_erna else ""
         if self.invoegen == "typen":
             self.toetsenbord.type(tekst)
         else:

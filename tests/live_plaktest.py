@@ -41,6 +41,21 @@ def pauze_in_het_midden(audio: np.ndarray, sec: float) -> np.ndarray:
     return np.concatenate([audio[:knip], np.zeros(int(sec * SR), np.float32), audio[knip:]])
 
 
+class Wachtrij(queue.Queue):
+    """Werkwachtrij die meldt wanneer het einde van de opname aan de beurt is: dan zijn alle
+    stukken ervoor volledig omgezet en ingevoegd."""
+
+    def __init__(self):
+        super().__init__()
+        self.einde = threading.Event()
+
+    def get(self, *args, **kwargs):
+        item = super().get(*args, **kwargs)
+        if item is dicteer.EINDE:
+            self.einde.set()
+        return item
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--model")
@@ -66,6 +81,7 @@ def main() -> int:
     cfg["opschonen"]["llm"] = args.llm
     d = dicteer.Dicteerder(cfg, args.model)
     d.sr = SR
+    d.werk = Wachtrij()
     if args.llm:
         d.opschoner.opwarmen()
     origineel = None
@@ -85,8 +101,7 @@ def main() -> int:
             echte_typ(tekst)
 
     d.typ = typ
-    for lus in d.verwerk_lussen() if hasattr(d, "verwerk_lussen") else [d.verwerk_lus]:
-        threading.Thread(target=lus, daemon=True).start()
+    threading.Thread(target=d.verwerk_lus, daemon=True).start()
 
     root = tk.Tk()
     root.geometry("800x300+50+50")
@@ -118,10 +133,8 @@ def main() -> int:
             d.ruw.put(audio[i:i + 1600]); time.sleep(0.1)
         res["spreekduur"] = time.monotonic() - t_start
         d.stop_evt.set()
-        einde = time.monotonic() + 120
-        while time.monotonic() < einde and len(geplakt) + len(d.gemist) < len(args.zinnen):
-            time.sleep(0.2)
-        time.sleep(1.5)  # eventuele late stukken
+        d.werk.einde.wait(120)  # alle stukken van deze opname verwerkt
+        time.sleep(0.5)          # het slotpunt komt net na het laatste stuk
         res["tekst"] = txt.get("1.0", "end").strip()
         try:
             res["klembord"] = klembord.lees()

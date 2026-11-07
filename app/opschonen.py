@@ -64,6 +64,23 @@ def regels(tekst: str) -> str:
     return t[:1].upper() + t[1:] if t else t
 
 
+def begint_klein(tekst: str) -> bool:
+    """True als de tekst (zonder opvulwoorden vooraan) met een kleine letter begint."""
+    return _OPVUL.sub("", tekst).lstrip()[:1].islower()
+
+
+# Woorden waarmee een zin na een korte pauze doorloopt. Geen namen: die houden hun hoofdletter.
+_VERVOLGWOORDEN = set(
+    "en maar of want dus dat die wat waar omdat als wanneer zodat terwijl toen waardoor "
+    "waarbij om te de het een in op met voor naar van bij door aan tot uit over".split())
+
+
+def loopt_door(tekst: str) -> bool:
+    """True als de tekst de vorige zin lijkt voort te zetten (kleine letter of voegwoord)."""
+    woorden = re.findall(r"\w+", _OPVUL.sub("", tekst))
+    return begint_klein(tekst) or bool(woorden) and woorden[0].lower() in _VERVOLGWOORDEN
+
+
 def woord_overlap(uit: str, bron: str) -> float:
     """Aandeel woorden in `uit` dat ook in `bron` voorkomt (hoofdletters/leestekens genegeerd)."""
     woorden = lambda t: re.findall(r"\w+", t.lower())  # noqa: E731

@@ -36,6 +36,22 @@ def test_echte_tekst_geen_spookzin(tekst):
     assert not is_hallucinatie(tekst)
 
 
+@pytest.mark.parametrize("tekst, klein", [
+    ("en de interacties", True), ("euh, en dan", True), ("Euh Eerste zin", False),
+    ("Ik ga", False), ("2005 was", False), ("", False),
+])
+def test_begint_klein(tekst, klein):
+    assert opschonen.begint_klein(tekst) is klein
+
+
+@pytest.mark.parametrize("tekst, door", [
+    ("En de interacties", True), ("de bewegingen", True), ("Omdat het regent", True),
+    ("Jan zei het", False), ("FBI agenten", False), ("Ik ga", False), ("", False),
+])
+def test_loopt_door(tekst, door):
+    assert opschonen.loopt_door(tekst) is door
+
+
 def test_woord_overlap():
     assert woord_overlap("Ik ga morgen.", "ik ga morgen") == 1.0
     assert woord_overlap("I am going tomorrow", "ik ga morgen") == 0.0

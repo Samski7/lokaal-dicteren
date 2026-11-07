@@ -167,29 +167,41 @@ class Transcriber:
             np.zeros(16000, dtype=np.float32), language="nl", beam_size=1, vad_filter=False)
         list(segmenten)
 
-    def _kort_in(self, tekst: str) -> str:
+    def _tokens(self, tekst: str) -> int:
+        return len(self.model.hf_tokenizer.encode(" " + tekst, add_special_tokens=False).ids)
+
+    def _kort_in(self, tekst: str, max_tokens: int = MAX_PROMPT_TOKENS) -> str:
         """Kort de prompt in tot de tokenlimiet; de eerste termen blijven behouden."""
         if not tekst:
             return ""
         tok = self.model.hf_tokenizer
         ids = tok.encode(" " + tekst, add_special_tokens=False).ids
-        if len(ids) <= MAX_PROMPT_TOKENS:
+        if len(ids) <= max_tokens:
             return tekst
-        ingekort = tok.decode(ids[:MAX_PROMPT_TOKENS]).strip()
+        ingekort = tok.decode(ids[:max(max_tokens, 0)]).strip()
         # Niet midden in een term afbreken.
         ingekort = ingekort.rsplit(",", 1)[0] if "," in ingekort else ingekort
-        log.warning("Vocabulaire ingekort van %d tot %d tokens", len(ids), MAX_PROMPT_TOKENS)
+        if max_tokens == MAX_PROMPT_TOKENS:  # bij context (elk stuk) niet telkens melden
+            log.warning("Vocabulaire ingekort van %d tot %d tokens", len(ids), max_tokens)
         return ingekort
 
-    def transcribeer(self, audio: str | Path) -> Transcript:
+    def transcribeer(self, audio: str | Path, vad: bool | None = None,
+                     context: str = "") -> Transcript:
+        """vad=False: audio is al op spraak geknipt (live dicteren), dus niet opnieuw zoeken.
+        context: einde van de vorige tekst uit dezelfde opname; komt achteraan in de prompt,
+        zodat een zin die over een pauze loopt correct verdergaat."""
         start = time.perf_counter()
+        prompt = self.initial_prompt
+        if context:
+            ruimte = MAX_PROMPT_TOKENS - self._tokens(context) - 1
+            prompt = f"{self._kort_in(prompt, ruimte)} {context}".strip()
         samples = lees_audio(audio) if isinstance(audio, (str, Path)) else audio
         segmenten_iter, info = self.model.transcribe(
             samples,
             language=self.cfg.get("taal") or None,
             beam_size=self.cfg.get("beam_size", 5),
-            vad_filter=self.cfg.get("vad_filter", True),
-            initial_prompt=self.initial_prompt or None,
+            vad_filter=self.cfg.get("vad_filter", True) if vad is None else vad,
+            initial_prompt=prompt or None,
         )
         # De segmenten worden pas hier (lui) berekend.
         segmenten = [
@@ -203,7 +215,7 @@ class Transcriber:
             duur_audio=round(info.duration, 2),
             duur_verwerking=round(time.perf_counter() - start, 2),
             model=self.modelnaam,
-            initial_prompt=self.initial_prompt,
+            initial_prompt=prompt,
         )
 
 
@@ -232,8 +244,8 @@ class OnnxTranscriber:
         self.model = model.with_vad(onnx_asr.load_vad("silero"))
         self.extra = {"language": w.get("taal") or "nl"} if "canary" in onnx_naam else {}
 
-    def transcribeer(self, audio) -> Transcript:
-        start = time.perf_counter()
+    def transcribeer(self, audio, vad: bool | None = None, context: str = "") -> Transcript:
+        start = time.perf_counter()  # vad, context: onnx-asr knipt zelf en kent geen prompt
         samples = lees_audio(audio) if isinstance(audio, (str, Path)) else audio
         resultaten = self.model.recognize(samples, sample_rate=16000, **self.extra)
         segmenten = [
